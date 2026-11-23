@@ -1,5 +1,6 @@
 // Finding receipts on pages (src/detect.ts), on a few kept as they come:
-// a table of invoices, an order confirmation, and a shop with a menu link.
+// a table of invoices, an invoice hosted by Stripe, an order confirmation, and
+// a shop with a menu link.
 
 import { expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -44,6 +45,17 @@ it("doesn't take an order confirmation's page for a receipt, but keeps it withou
   expect(scanned.found).toEqual([]);
   expect(snapshot).not.toContain("<script");
   expect(snapshot).toContain('<base href="https://acme.example/order.html">');
+});
+
+it("finds a Stripe-hosted invoice's PDF, whose path ends /pdf rather than .pdf", async () => {
+  const { found } = (await scan("invoice.html")).scan;
+
+  expect(found.map((f) => new URL(f.url).host + new URL(f.url).pathname.replace(/[^/]+(?=\/pdf$)/, "…"))).toEqual(["pay.stripe.com/invoice/acct_1Abc/…/pdf"]);
+  expect(found[0]!.score).toBeGreaterThanOrEqual(5);
+
+  // Named by the page, as the link only says Download and its file is called "pdf". The total is further off
+  // than the link's own block, so no amount.
+  expect(found.map((f) => [f.label, f.amount, f.date])).toEqual([["Invoice | Acme Cloud", null, "Sep 14, 2026"]]);
 });
 
 it("doesn't take a menu link to Invoices, or a shop's prices, for a receipt", async () => {

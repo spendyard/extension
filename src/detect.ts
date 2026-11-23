@@ -36,8 +36,11 @@ const datePattern = new RegExp(
 /** The most a label or context line holds. */
 const shortText = 140;
 
-/** A PDF, by its URL. */
-const pdfUrl = /\.pdf(?:$|[?#])/i;
+/**
+ * A PDF, by its URL: a name ending .pdf, or a path ending /pdf, as Stripe's hosted invoices
+ * (pay.stripe.com/invoice/…/pdf, behind Vercel's and many others' Download) have it.
+ */
+const pdfUrl = /(?:\.|\/)pdf\/?(?:$|[?#])/i;
 
 function squeeze(text: string, length = shortText): string {
   const flat = text.replace(/\s+/g, " ").trim();
@@ -112,7 +115,7 @@ function absolute(href: string): URL | null {
   }
 }
 
-/** A link to a PDF: its URL ends in .pdf, or the link says it's one (type, or a download name ending .pdf). */
+/** A link to a PDF: its URL ends in .pdf or /pdf, or the link says it's one (type, or a download name ending .pdf). */
 function linksToPdf(link: HTMLAnchorElement, url: URL): boolean {
   const type = (link.getAttribute("type") ?? "").toLowerCase();
   const downloadName = link.getAttribute("download") ?? "";
@@ -163,9 +166,18 @@ function scoreLink(link: HTMLAnchorElement, url: URL): Found | null {
   }
 
   // "View invoice" says more than "in_123"; "invoice-2026-11.pdf" more than "Download".
+  // A path ending /pdf (Stripe's) has no name of its own: "pdf" says nothing.
   const namedFile = /\.\w{2,4}$/.test(name) && !looksLikeId(name);
-  const plainName = !looksLikeId(name) && name;
-  const label = (receiptWords.test(text) && text) || (namedFile && name) || (!downloadWords.test(text) && text) || plainName || text || url.hostname;
+  const plainName = !looksLikeId(name) && name.toLowerCase() !== "pdf" && name;
+  const titleNamesReceipt = receiptWords.test(document.title) && squeeze(document.title);
+  const label =
+    (receiptWords.test(text) && text) ||
+    (namedFile && name) ||
+    (!downloadWords.test(text) && text) ||
+    plainName ||
+    titleNamesReceipt ||
+    text ||
+    url.hostname;
 
   return {
     id: url.href,
