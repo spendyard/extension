@@ -7,11 +7,7 @@
     <link rel="stylesheet" href="panel.css" />
   </head>
   <body>
-    <header>
-      <img src="icon-48.png" alt="" width="20" height="20" />
-      <strong>Spendyard</strong>
-      <button id="rescan" class="quiet" title="Look at the page again" hidden>↻</button>
-    </header>
+    <!-- No header of its own: Chrome's side panel shows the extension's name and icon above it. -->
 
     <!-- Not connected: where to, and the button that opens the dashboard's page. -->
     <section id="connect" class="connect" hidden>
@@ -34,7 +30,10 @@
       <main>
         <ul id="sent" class="list"></ul>
 
-        <h2>On this page</h2>
+        <div class="heading">
+          <h2>On this page</h2>
+          <button id="rescan" class="quiet small" title="Look at the page again">Look again</button>
+        </div>
         <p id="where" class="where"></p>
         <ul id="list" class="list"></ul>
         <p id="empty" class="empty" hidden></p>

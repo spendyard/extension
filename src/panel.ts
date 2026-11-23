@@ -171,7 +171,6 @@ function render() {
 
   ui.connect.hidden = connected;
   ui.connected.hidden = !connected;
-  ui.rescan.hidden = !connected;
 
   if (!state.connection) {
     return;
