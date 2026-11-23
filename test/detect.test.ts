@@ -53,3 +53,24 @@ it("doesn't take a menu link to Invoices, or a shop's prices, for a receipt", as
 
   expect(found).toEqual([]);
 });
+
+it("names what it sends by what it is, never by an id from its URL", async () => {
+  const { looksLikeId } = await import("../src/found");
+
+  expect(looksLikeId("inv_c3RyaXBlOmluXzFVSUNhcUdJcGRLRlVtUFk0UU12SUg4VA.html")).toBe(true);
+  expect(looksLikeId("in_1QabcDEFghiJKLmnoPQRstuv")).toBe(true);
+  expect(looksLikeId("invoice-2026-11.pdf")).toBe(false);
+  expect(looksLikeId("View invoice")).toBe(false);
+  expect(looksLikeId("Receipt-2134-5521.pdf")).toBe(false);
+});
+
+it("names a hosted invoice by its page's title, or by its site when it has none", async () => {
+  const { nameFor } = await import("../src/fetch");
+
+  const id = "inv_c3RyaXBlOmluXzFVSUNhcUdJcGRLRlVtUFk0UU12SUg4VA";
+  const found: Found = { id, kind: "file", url: `https://invoice.stripe.com/i/acct_1/${id}`, label: id, context: "", amount: null, date: null, score: 6 };
+
+  expect(nameFor(null, found, "text/html", "Invoice #1234 from Acme Cloud")).toBe("Invoice #1234 from Acme Cloud.html");
+  expect(nameFor(null, found, "text/html")).toBe("Receipt from invoice.stripe.com.html");
+  expect(nameFor("Invoice-1234.pdf", found, "application/pdf")).toBe("Invoice-1234.pdf");
+});

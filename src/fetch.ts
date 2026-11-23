@@ -2,7 +2,7 @@
 // cookies on that site go along, as the extension may reach every site), or
 // the page itself as one HTML file (detect.ts's snapshot).
 
-import type { Found } from "./found";
+import { looksLikeId, type Found } from "./found";
 
 /** As the server takes them (documents/intake.ts). */
 const largest = 25 * 1024 * 1024;
@@ -71,11 +71,37 @@ const extensions: Record<string, string> = {
   "text/html": ".html",
 };
 
-/** A name to keep it by: the one it came with, or its label, ending as its type does. */
-function nameFor(given: string | null, found: Found, contentType: string): string {
-  const fromUrl = new URL(found.url).pathname.split("/").pop() ?? "";
-  const base = (given || (/\.\w{2,4}$/.test(fromUrl) ? fromUrl : "") || found.label || "receipt")
+/** A page's <title>, from the start of its HTML: what a hosted invoice calls itself. */
+export function titleIn(bytes: Uint8Array): string | null {
+  const start = new TextDecoder().decode(bytes.subarray(0, 64 * 1024));
+  const tag = start.match(/<title[^>]*>([\s\S]{1,300}?)<\/title>/i)?.[1];
+
+  if (!tag) {
+    return null;
+  }
+
+  // Its entities (&amp;, &#8211;) as the page shows them.
+  const shown = new DOMParser().parseFromString(`<p>${tag}</p>`, "text/html").body.textContent ?? "";
+  const title = shown.replace(/\s+/g, " ").trim();
+
+  return title || null;
+}
+
+/**
+ * A name to keep it by, the first that says something: the one the server gave, the page's title, the file's name
+ * in its URL, its label; never an id from a URL. Ending as its type does.
+ */
+export function nameFor(given: string | null, found: Found, contentType: string, title: string | null = null): string {
+  const url = new URL(found.url);
+  const fromUrl = url.pathname.split("/").pop() ?? "";
+  const fileName = /\.\w{2,4}$/.test(fromUrl) ? fromUrl : null;
+
+  const candidates = [given, title, fileName, found.label];
+  const chosen = candidates.find((c): c is string => Boolean(c?.trim()) && !looksLikeId(c!)) ?? `Receipt from ${url.hostname}`;
+
+  const base = chosen
     .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
     .trim()
     .slice(0, 120);
 
@@ -114,8 +140,9 @@ async function fetchFile(found: Found): Promise<Got> {
   }
 
   const given = dispositionName(response.headers.get("content-disposition"));
+  const title = contentType === "text/html" ? titleIn(bytes) : null;
 
-  return { name: nameFor(given, found, contentType), contentType, bytes };
+  return { name: nameFor(given, found, contentType, title), contentType, bytes };
 }
 
 async function snapshotPage(tabId: number, found: Found): Promise<Got> {
@@ -136,7 +163,7 @@ async function snapshotPage(tabId: number, found: Found): Promise<Got> {
     throw new Error("The page is larger than 25 MB");
   }
 
-  return { name: nameFor(null, found, "text/html"), contentType: "text/html", bytes };
+  return { name: nameFor(null, found, "text/html", titleIn(bytes)), contentType: "text/html", bytes };
 }
 
 /** The receipt's file, from the tab it was found in. */

@@ -6,7 +6,7 @@
 // - the dashboard's /connect/extension page hands over the token, which is
 //   kept (connection.ts), and its tab closed.
 
-import type { Found } from "./found";
+import { looksLikeId, type Found } from "./found";
 import { keep, knownServer, type Connection } from "./connection";
 import { add } from "./pending";
 
@@ -49,11 +49,16 @@ function foundFrom(info: chrome.contextMenus.OnClickData, tab: chrome.tabs.Tab):
     return null;
   }
 
+  // The link's own text where Chrome gives it; a file's name from its URL, but not an id.
+  const linkText = (info as { linkText?: string }).linkText?.trim();
+  const fromUrl = new URL(url).pathname.split("/").pop() ?? "";
+  const label = linkText || info.selectionText || (fromUrl && !looksLikeId(fromUrl) ? fromUrl : new URL(url).hostname);
+
   return {
     id: url,
     kind: "file",
     url,
-    label: info.selectionText || new URL(url).pathname.split("/").pop() || url,
+    label,
     context: "Sent from the right-click menu",
     amount: null,
     date: null,

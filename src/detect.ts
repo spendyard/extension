@@ -8,7 +8,7 @@
 // file name, the words, amounts and dates around it. Nothing here is certain,
 // so the panel shows everything above a low bar and ticks the likely ones.
 
-import type { Found, Scan } from "./found";
+import { looksLikeId, type Found, type Scan } from "./found";
 
 /** "Receipt" and "invoice" in the languages Spendyard's customers write in. */
 const receiptWords =
@@ -178,8 +178,9 @@ function scoreLink(link: HTMLAnchorElement, url: URL): Found | null {
   }
 
   // "View invoice" says more than "in_123"; "invoice-2026-11.pdf" more than "Download".
-  const namedFile = /\.\w{2,4}$/.test(name);
-  const label = (receiptWords.test(text) && text) || (namedFile && name) || (!downloadWords.test(text) && text) || name || url.hostname;
+  const namedFile = /\.\w{2,4}$/.test(name) && !looksLikeId(name);
+  const plainName = !looksLikeId(name) && name;
+  const label = (receiptWords.test(text) && text) || (namedFile && name) || (!downloadWords.test(text) && text) || plainName || text || url.hostname;
 
   return {
     id: url.href,

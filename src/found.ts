@@ -23,6 +23,16 @@ export interface Found {
   score: number;
 }
 
+/**
+ * Whether a name is only an id: "inv_c3RyaXBlOmluXzFVSUNh…" from a URL says nothing to a person and won't
+ * wrap in a list. "invoice-2026-11.pdf" and "View invoice" are names.
+ */
+export function looksLikeId(name: string): boolean {
+  const plain = name.replace(/\.\w{2,4}$/, "");
+
+  return /^[A-Za-z0-9_]{16,}$/.test(plain) || /[A-Za-z0-9]{24,}/.test(plain);
+}
+
 /** A page scanned, and the receipts found on it. */
 export interface Scan {
   url: string;
