@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Spendyard</title>
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <header>
+      <img src="icon-48.png" alt="" width="20" height="20" />
+      <strong>Spendyard</strong>
+      <button id="rescan" class="quiet" title="Look at the page again" hidden>↻</button>
+    </header>
+
+    <!-- Not connected: where to, and the button that opens the dashboard's page. -->
+    <section id="connect" class="connect" hidden>
+      <p>Connect the extension to send the receipts it finds to Spendyard.</p>
+      <label>
+        Spendyard
+        <select id="server"></select>
+      </label>
+      <button id="connect-button" class="primary">Connect to Spendyard</button>
+      <p id="connect-note" class="note" hidden></p>
+    </section>
+
+    <!-- Connected. -->
+    <section id="connected" hidden>
+      <div class="who">
+        <span id="who"></span>
+        <button id="disconnect" class="quiet small">Disconnect</button>
+      </div>
+
+      <main>
+        <ul id="sent" class="list"></ul>
+
+        <h2>On this page</h2>
+        <p id="where" class="where"></p>
+        <ul id="list" class="list"></ul>
+        <p id="empty" class="empty" hidden></p>
+
+        <label id="drop" class="drop">
+          <input id="files" type="file" multiple accept="application/pdf,image/*,.eml,.html" hidden />
+          Drop receipts here, or <u>choose files</u>
+        </label>
+      </main>
+
+      <footer>
+        <button id="send-page" class="quiet" hidden>Send the whole page</button>
+        <button id="send" class="primary" disabled>Send</button>
+      </footer>
+    </section>
+
+    <script type="module" src="panel.js"></script>
+  </body>
+</html>

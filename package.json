@@ -1,0 +1,16 @@
+{
+  "name": "@spendyard/extension",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build.ts",
+    "typecheck": "tsc -p .",
+    "test": "bun test"
+  },
+  "packageManager": "bun@1.4.4",
+  "devDependencies": {
+    "@types/chrome": "0.3.7",
+    "happy-dom": "20.14.6",
+    "typescript": "7.0.2"
+  }
+}

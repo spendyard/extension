@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Spendyard",
+  "version": "0.1.0",
+  "description": "Finds the receipts and invoices on a page and sends them to Spendyard.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuJaRGZEMzdyWNSSiuPbD2DqCCUQN6BjeBHIuyCx+1/yRCu5Fu2ZBR1SkctfDSkhirCoWKagtUcZKcgZZm7Vh1Gj70o0s84F2W3JPJvilhR71ugsYMXSMh28Hotsd0ErsMd3z+eF+x7Xuqzdw0CaE32Kdv+vEnQowockkPRnnU3jH7Lz43m/C1qnvls5m0BYxwDcYU5ZPBM4RdknOwOPhK4GkSUzQExSZzT0ScaBhM5oJJXhu0q4McCb0aVauDsEE27T2/PwJJY9Ya7yE2Ddk8bB5c1jaoj/MC6aKaRsY/2XImPz80f6Av06Djbqd+sOuOy4Ptf99e4QKLJpvreynIwIDAQAB",
+  "icons": {
+    "16": "icon-16.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  },
+  "action": {
+    "default_title": "Receipts on this page",
+    "default_icon": {
+      "16": "icon-16.png",
+      "48": "icon-48.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "panel.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "sidePanel",
+    "scripting",
+    "storage",
+    "tabs",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "externally_connectable": {
+    "matches": [
+      "https://app.spendyard.com/*",
+      "https://staging.spendyard.com/*",
+      "http://localhost/*"
+    ]
+  }
+}
