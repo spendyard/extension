@@ -1,5 +1,5 @@
 // Builds the extension into dist/, to load unpacked (chrome://extensions →
-// Load unpacked → extension/dist) or to zip for the Chrome Web Store.
+// Load unpacked → dist) or to zip for the Chrome Web Store.
 //
 //   bun run build             once
 //   bun run build --watch     again on every change

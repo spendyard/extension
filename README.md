@@ -22,29 +22,29 @@ the dashboard's `/connect/extension` page, where you pick the organisation; the
 page hands the extension a token of its own (`chrome.runtime.sendMessage`,
 allowed by the manifest's `externally_connectable`). That token:
 
-- may only say who it's connected as and send documents (the server's
-  `authz.ts`, `extensionGrants`);
+- may only say who it's connected as and send documents;
 - acts only in the organisation it was connected to;
 - is listed in Settings → Account as *Spendyard extension · Chrome on macOS*,
   and signed out there; **Disconnect** in the panel ends it too;
 - lasts 90 days from its last use.
 
-The server only hands tokens to the extension ids in `EXTENSION_IDS`
-(`workers/server/wrangler.jsonc`). The manifest's `key` gives a development
+The server only hands tokens to the extension ids it is configured with
+(`EXTENSION_IDS`, in Spendyard Cloud's own settings). The manifest's `key` gives a development
 build the id `jeooahbbldceddcpfgobjgflejbagejj` wherever it's loaded from;
 the Chrome Web Store's id joins it once it's listed.
 
 ## Building and loading it
 
 ```bash
-cd extension && bun install && bun run build
+bun install && bun run build
 ```
 
 Then `chrome://extensions` → Developer mode → **Load unpacked** →
-`extension/dist`. `bun run build --watch` rebuilds on every change; reload
+`dist`. `bun run build --watch` rebuilds on every change; reload
 the extension on that page to take it.
 
-Locally, run the Worker and the dashboard (`bun run dev` at the root, and
+To work against a local server, run Spendyard Cloud's Worker and dashboard
+from the platform repository (`bun run dev` at its root, and
 `cd web && bun run dev`), and pick *Local* in the panel before connecting.
 
 ## Checking it
