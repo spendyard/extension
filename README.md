@@ -3,10 +3,12 @@
 A browser extension that finds the receipts and invoices on the page you're
 looking at and sends the ones you pick to Spendyard.
 
-- **The side panel** (the toolbar button) lists what it found on the page:
-  PDFs and images linked from it (a billing table's "Download" links), PDFs
-  shown in it, and the page itself when it is a receipt (an order
-  confirmation). The likely ones are ticked; **Send** sends them.
+- **The side panel** (the toolbar button) lists the PDFs it found on the
+  page: those linked from it (a billing table's "Download" links), those
+  shown in it, and the PDF open in the tab. Only PDFs: never the page itself
+  or a page it links to, even one that calls itself an invoice, and never an
+  image. The likely ones are ticked; **Send** sends them. **Send the whole page**
+  sends the page itself, by hand.
 - **Right-click** a link, an image or the page: *Send to Spendyard*.
 - **Drop files** on the panel, or choose them.
 
@@ -60,7 +62,7 @@ bun test        # detection on the pages in test/pages
 | --- | --- |
 | `public/manifest.json` | Manifest V3: side panel, context menu, `<all_urls>` to read pages and fetch their files |
 | `src/background.ts` | The service worker: the button, the right-click menu, taking the token |
-| `src/detect.ts` | Run in the page: what's a receipt, and a snapshot of the page |
+| `src/detect.ts` | Run in the page: which PDFs are receipts, and a snapshot of the page |
 | `src/panel.ts` | The side panel |
 | `src/fetch.ts` | A receipt's bytes: a linked file, or the page as HTML |
 | `src/api.ts` | The Connect API in JSON, with the token |

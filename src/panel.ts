@@ -152,7 +152,6 @@ function extraItem(extra: Extra): HTMLLIElement {
 }
 
 function renderFooter() {
-  const page = state.scan?.found.find((f) => f.kind === "page");
   const sendable = [...state.ticked].filter((id) => {
     const status = state.status.get(id)?.state;
 
@@ -162,8 +161,8 @@ function renderFooter() {
   ui.send.disabled = sendable.length === 0;
   ui.send.textContent = sendable.length > 1 ? `Send ${sendable.length}` : "Send";
 
-  // The page itself, for when it is a receipt the detection missed.
-  ui.sendPage.hidden = Boolean(page) || !state.scan || state.scanError !== null;
+  // The page itself, by hand: detection only finds PDFs.
+  ui.sendPage.hidden = !state.scan || state.scanError !== null;
 }
 
 function render() {
@@ -185,7 +184,7 @@ function render() {
   ui.list.replaceChildren(...found.map(foundItem));
 
   ui.empty.hidden = found.length > 0;
-  ui.empty.textContent = state.scanError ?? (state.scan ? "No receipts found on this page." : "Looking…");
+  ui.empty.textContent = state.scanError ?? (state.scan ? "No PDFs found on this page." : "Looking…");
 
   renderFooter();
 }

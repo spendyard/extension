@@ -1,12 +1,13 @@
 // Run in the page (chrome.scripting, the extension's own isolated world) when
-// the panel scans it: finds the receipts it links to or shows, and whether the
-// page is a receipt itself, such as an order confirmation. It only reads the
-// page. The panel then calls spendyardScan() and, to send the page itself,
-// spendyardSnapshot().
+// the panel scans it: finds the PDFs it links to or shows, and the PDF the tab
+// shows itself. Only PDFs: never the page, a page it links to, or an image;
+// those are sent by hand (the panel's Send this page, the right-click menu).
+// It only reads the page. The panel then calls spendyardScan() and, to send
+// the page by hand, spendyardSnapshot().
 //
-// Each receipt gets a score from what's said about it: its link's text and
-// file name, the words, amounts and dates around it. Nothing here is certain,
-// so the panel shows everything above a low bar and ticks the likely ones.
+// Each PDF gets a score from what's said about it: its link's text and file
+// name, the words, amounts and dates around it. Nothing here is certain, so
+// the panel shows everything above a low bar and ticks the likely ones.
 
 import { looksLikeId, type Found, type Scan } from "./found";
 
@@ -16,14 +17,6 @@ const receiptWords =
 
 /** What a link to a file usually says. */
 const downloadWords = /\b(download|pdf|view|print|last ned|skriv ut|vis|herunterladen|télécharger)\b/i;
-
-/** A page that is a receipt says so near the top. */
-const confirmationWords =
-  /\b(order confirmation|thank you for your (order|purchase)|payment (received|confirmation|successful)|your receipt|ordrebekreftelse|takk for (din )?bestilling|kvittering for)\b/i;
-
-/** A total, followed by a number. */
-const totalLine =
-  /\b(total|grand total|amount (due|paid|charged)|sum|totalt|betale|beløp|gesamt|montant)\b[^\n\d]{0,30}\d/i;
 
 const currency = String.raw`(?:[$€£¥]|\b(?:USD|EUR|GBP|NOK|SEK|DKK|CHF|kr\.?|,-))`;
 const number = String.raw`\d[\d\s.,']*\d|\d`;
@@ -43,9 +36,8 @@ const datePattern = new RegExp(
 /** The most a label or context line holds. */
 const shortText = 140;
 
-/** Files that can be receipts, by their URL. */
+/** A PDF, by its URL. */
 const pdfUrl = /\.pdf(?:$|[?#])/i;
-const imageUrl = /\.(?:png|jpe?g|gif|webp)(?:$|[?#])/i;
 
 function squeeze(text: string, length = shortText): string {
   const flat = text.replace(/\s+/g, " ").trim();
@@ -120,32 +112,30 @@ function absolute(href: string): URL | null {
   }
 }
 
-/** A link scored: a PDF or the words "receipt" or "invoice" on it count most; an amount and a date beside it, a little. */
+/** A link to a PDF: its URL ends in .pdf, or the link says it's one (type, or a download name ending .pdf). */
+function linksToPdf(link: HTMLAnchorElement, url: URL): boolean {
+  const type = (link.getAttribute("type") ?? "").toLowerCase();
+  const downloadName = link.getAttribute("download") ?? "";
+
+  return pdfUrl.test(url.href) || type === "application/pdf" || /\.pdf$/i.test(downloadName);
+}
+
+/** A link to a PDF scored: the words "receipt" or "invoice" on it count most; an amount and a date beside it, a little. */
 function scoreLink(link: HTMLAnchorElement, url: URL): Found | null {
+  // Only PDFs: a link to a page, even one that calls itself an invoice, is left to be sent by hand.
+  if (!linksToPdf(link, url)) {
+    return null;
+  }
+
   const text = squeeze(link.textContent || link.getAttribute("aria-label") || link.title || "");
   const name = fileNameOf(url);
   const said = `${text} ${name} ${url.pathname} ${url.search}`;
   const context = squeeze(contextOf(link));
 
-  const isPdf = pdfUrl.test(url.href);
-  const isImage = imageUrl.test(url.href);
   const namesReceipt = receiptWords.test(said);
   const contextNamesReceipt = receiptWords.test(context);
 
-  // Only a file, or something that calls itself a receipt, is worth a look.
-  if (!isPdf && !isImage && !namesReceipt) {
-    return null;
-  }
-
-  let score = 0;
-
-  if (isPdf) {
-    score += 3;
-  }
-
-  if (isImage) {
-    score += 1;
-  }
+  let score = 3;
 
   if (namesReceipt) {
     score += 3;
@@ -163,11 +153,6 @@ function scoreLink(link: HTMLAnchorElement, url: URL): Found | null {
 
   const amount = amountIn(context);
   const date = dateIn(context);
-
-  // A link that only says "Invoices", with no amount or date beside it, is the menu, not one of them.
-  if (!isPdf && !isImage && !offersFile && !amount && !date) {
-    return null;
-  }
 
   if (amount) {
     score += 1;
@@ -223,90 +208,9 @@ function embeddedPdfs(): Found[] {
   return found;
 }
 
-/** Large pictures said to be receipts: a photo of one, or a scan. */
-function receiptImages(): Found[] {
-  const found: Found[] = [];
-
-  for (const image of document.querySelectorAll("img")) {
-    const url = absolute(image.currentSrc || image.src);
-    const said = `${image.alt} ${image.title} ${url?.pathname ?? ""}`;
-    const bigEnough = image.naturalWidth >= 300 && image.naturalHeight >= 300;
-
-    if (!url || !bigEnough || !receiptWords.test(said)) {
-      continue;
-    }
-
-    found.push({
-      id: url.href,
-      kind: "file",
-      url: url.href,
-      label: squeeze(image.alt) || fileNameOf(url),
-      context: "",
-      amount: null,
-      date: null,
-      score: 4,
-    });
-  }
-
-  return found;
-}
-
-/** The page as a receipt: a title or heading that says so, a total, amounts and a date. Null when it doesn't look like one. */
-function pageItself(): Found | null {
-  const headings = Array.from(document.querySelectorAll("h1, h2"), (h) => h.textContent ?? "").join(" ");
-  const top = `${document.title} ${headings}`;
-  const text = document.body?.innerText ?? "";
-
-  let score = 0;
-
-  if (receiptWords.test(top)) {
-    score += 3;
-  }
-
-  if (confirmationWords.test(top) || confirmationWords.test(text.slice(0, 3000))) {
-    score += 3;
-  }
-
-  if (totalLine.test(text)) {
-    score += 2;
-  }
-
-  const amounts = text.match(new RegExp(amountPattern.source, "gi")) ?? [];
-  const date = dateIn(text);
-
-  if (amounts.length >= 2) {
-    score += 1;
-  }
-
-  if (date) {
-    score += 1;
-  }
-
-  // A total and some amounts alone are any shop's cart: it has to say it's a receipt.
-  if (score < 5) {
-    return null;
-  }
-
-  const total = text.match(totalLine);
-  const amount = total ? amountIn(text.slice(total.index, (total.index ?? 0) + 80)) : (amounts[0] ?? null);
-
-  return {
-    id: `page:${location.href}`,
-    kind: "page",
-    url: location.href,
-    label: squeeze(document.title) || location.hostname,
-    context: "This page",
-    amount,
-    date,
-    score,
-  };
-}
-
-/** The tab shows a PDF or an image itself, not a page. */
+/** The tab shows a PDF itself, not a page. */
 function shownFile(): Found | null {
-  const type = document.contentType;
-
-  if (type !== "application/pdf" && !type.startsWith("image/")) {
+  if (document.contentType !== "application/pdf") {
     return null;
   }
 
@@ -343,14 +247,7 @@ function scan(): Scan {
   if (file) {
     keep(file);
   } else {
-    const page = pageItself();
-
-    if (page) {
-      keep(page);
-    }
-
     embeddedPdfs().forEach(keep);
-    receiptImages().forEach(keep);
 
     for (const link of document.querySelectorAll<HTMLAnchorElement>("a[href]")) {
       const url = absolute(link.getAttribute("href") ?? "");
@@ -367,7 +264,7 @@ function scan(): Scan {
   return { url: location.href, title: document.title, found: ranked };
 }
 
-/** The page as it is now, as one HTML file for the reader: no scripts, and links that still lead where they did. */
+/** The page as it is now, as one HTML file for the reader, when it's sent by hand: no scripts, and links that still lead where they did. */
 function snapshot(): string {
   const copy = document.documentElement.cloneNode(true) as HTMLElement;
 

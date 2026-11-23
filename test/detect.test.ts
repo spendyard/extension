@@ -26,24 +26,22 @@ async function scan(name: string): Promise<{ scan: Scan; snapshot: string }> {
 
 const brief = (f: Found) => ({ label: f.label, amount: f.amount, date: f.date, url: f.url });
 
-it("finds each invoice in a billing table, with its amount and date, the likely ones first", async () => {
+it("finds only the PDFs in a billing table, with their amount and date, never its links to invoice pages", async () => {
   const { found } = (await scan("billing.html")).scan;
 
   expect(found.map(brief)).toEqual([
     { label: "invoice-2026-11.pdf", amount: "$60.00", date: "Nov 3, 2026", url: "https://acme.example/files/invoice-2026-11.pdf" },
-    { label: "View invoice", amount: "$60.00", date: "Oct 3, 2026", url: "https://acme.example/billing/invoice/in_123" },
-    { label: "Receipt", amount: "NOK 640,00", date: "03.09.2026", url: "https://pay.example.com/receipt/abc" },
     // A PDF that isn't one: shown, not ticked.
     { label: "terms.pdf", amount: null, date: null, url: "https://acme.example/terms.pdf" },
   ]);
 
-  expect(found.filter((f) => f.score >= 5)).toHaveLength(3);
+  expect(found.filter((f) => f.score >= 5)).toHaveLength(1);
 });
 
-it("finds an order confirmation as a receipt itself, and keeps it without its scripts", async () => {
+it("doesn't take an order confirmation's page for a receipt, but keeps it without its scripts to send by hand", async () => {
   const { scan: scanned, snapshot } = await scan("order.html");
 
-  expect(scanned.found.map((f) => [f.kind, f.amount, f.date])).toEqual([["page", "648,-", "21.11.2026"]]);
+  expect(scanned.found).toEqual([]);
   expect(snapshot).not.toContain("<script");
   expect(snapshot).toContain('<base href="https://acme.example/order.html">');
 });

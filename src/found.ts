@@ -1,6 +1,7 @@
-// What detect.ts finds on a page and hands to the panel.
+// What detect.ts finds on a page and hands to the panel, and what the panel and
+// the right-click menu send.
 
-/** A receipt the page links to or shows (a PDF, an image), or the page itself when it is one. */
+/** A PDF the page links to or shows; or, sent by hand, the page itself. */
 export interface Found {
   /** The same for the same receipt on every scan, so the panel keeps what was ticked. */
   id: string;
