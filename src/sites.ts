@@ -28,6 +28,14 @@ export interface SiteRule {
    * take from each, by its URL without its query.
    */
   follow?: { pages: string; pdf: string };
+
+  /**
+   * A list drawn from the vendor's own billing API, its Download buttons with no link behind them: the call the page
+   * made, by its URL (it has the organisation and the region in it), or else the URL to call, with $1 and on taken
+   * from the page's path by the rule's pages pattern. Read in the page as the page would (stripe.ts reads its Stripe
+   * invoices). Only ever a GET.
+   */
+  api?: { seen: string; url: string };
 }
 
 export const rules: SiteRule[] = [
@@ -39,6 +47,17 @@ export const rules: SiteRule[] = [
     follow: {
       pages: "/invoices/inv_[A-Za-z0-9_]+$",
       pdf: "^https://pay\\.stripe\\.com/invoice/.+/pdf$",
+    },
+  },
+  {
+    // The invoices are Stripe's, from Miro's billing API; each row's Download is a button. The call is to the
+    // organisation's region (svc.eu01…), so the one the page made is taken first, eu01 when it can't be seen.
+    name: "Miro",
+    hosts: ["miro.com"],
+    pages: "/app/settings/company/(\\d+)/billing/?$",
+    api: {
+      seen: "^https://svc\\.[a-z0-9]+\\.miro\\.com/api/billing-and-payment/public/api/v1/organizations/\\d+/invoices$",
+      url: "https://svc.eu01.miro.com/api/billing-and-payment/public/api/v1/organizations/$1/invoices",
     },
   },
   {

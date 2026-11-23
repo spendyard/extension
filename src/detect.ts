@@ -9,7 +9,7 @@
 // name, the words, amounts and dates around it. Nothing here is certain, so
 // the panel shows everything above a low bar and ticks the likely ones.
 
-import { looksLikeId, type Found, type Scan, type ToFollow } from "./found";
+import { looksLikeId, type Found, type Scan, type ToFollow, type ToRead } from "./found";
 import { matches, ruleFor, type SiteRule } from "./sites";
 
 /** "Receipt" and "invoice" in the languages Spendyard's customers write in. */
@@ -339,6 +339,29 @@ function toFollow(rule: SiteRule | null): ToFollow[] {
   return [...pages.values()];
 }
 
+/** The billing API a rule says to read: the call the page made, or the rule's URL filled in from the page's path. */
+function toRead(rule: SiteRule | null): ToRead[] {
+  const api = rule?.api;
+
+  if (!rule || !api) {
+    return [];
+  }
+
+  const made = performance
+    .getEntriesByType("resource")
+    .map((entry) => entry.name)
+    .find((name) => new RegExp(api.seen).test(name.split(/[?#]/)[0]!));
+
+  if (made) {
+    return [{ url: made, vendor: rule.name }];
+  }
+
+  const parts = location.pathname.match(new RegExp(rule.pages));
+  const url = parts ? api.url.replace(/\$(\d)/g, (_, n: string) => parts[Number(n)] ?? "") : null;
+
+  return url ? [{ url, vendor: rule.name }] : [];
+}
+
 function scan(): Scan {
   const found = new Map<string, Found>();
   const rule = ruleFor(new URL(location.href));
@@ -381,7 +404,9 @@ function scan(): Scan {
 
   const follow = file ? [] : toFollow(rule);
 
-  return { url: location.href, title: document.title, found: ranked, follow };
+  const read = file ? [] : toRead(rule);
+
+  return { url: location.href, title: document.title, found: ranked, follow, read };
 }
 
 /** The page as it is now, as one HTML file for the reader, when it's sent by hand: no scripts, and links that still lead where they did. */

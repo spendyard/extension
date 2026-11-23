@@ -23,14 +23,19 @@ around them. Some need more, and `src/sites.ts` keeps a rule for each, as data
 - **invoice pages to open**: a list whose rows only link to each invoice's own
   page, the PDF only there. The panel opens those pages, two at a time and at
   most 24, as you, reads their links and lists each one's PDF with its row's
-  amount and date (Vercel's invoices, whose PDFs are Stripe's).
+  amount and date (Vercel's invoices, whose PDFs are Stripe's);
+- **a billing API to read**: a list drawn from the vendor's own API, its
+  Download buttons with nothing behind them. The panel reads it in the tab, as
+  the page would and only ever with a GET, and lists the Stripe invoices in it
+  (`src/stripe.ts`: each one's hosted PDF, date, total in its currency and
+  whether it's paid), the paid ones ticked and an unpaid one shown (Miro's).
 
 A rule only adds to what the scan finds; on a site it doesn't know, or one
 that has changed, the general scan still runs.
 
 Detection reads only the page, in the extension's own isolated world
 (`src/detect.ts`), and only when the panel is open; and where a rule says so,
-the invoice pages it links to. Linked files are fetched as
+the invoice pages it links to or the billing API it draws its list from. Linked files are fetched as
 you, so a billing page's invoices come with your sign-in to that site. Nothing
 leaves the browser except what you send.
 
@@ -83,6 +88,7 @@ bun test        # detection on the pages in test/pages
 | `src/panel.ts` | The side panel |
 | `src/sites.ts` | The rules for particular billing pages |
 | `src/follow.ts` | Opening an invoice's own page for its PDF |
+| `src/stripe.ts` | Stripe's invoices in a billing API's answer |
 | `src/fetch.ts` | A receipt's bytes: a linked file, or the page as HTML |
 | `src/api.ts` | The Connect API in JSON, with the token |
 | `src/connection.ts`, `src/pending.ts` | What's kept in `chrome.storage` |

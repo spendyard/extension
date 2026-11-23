@@ -136,4 +136,29 @@ it("finds a site's rule by its host, a subdomain included, and its page", async 
   expect(ruleFor(new URL("https://github.com/organizations/acme/billing/history"))?.name).toBe("GitHub");
   expect(ruleFor(new URL("https://github.com/acme/repo"))).toBeNull();
   expect(ruleFor(new URL("https://notvercel.com/account/settings/invoices"))).toBeNull();
+  expect(ruleFor(new URL("https://miro.com/app/settings/company/1234567890/billing"))?.name).toBe("Miro");
+});
+
+it("reads Stripe's invoices from a billing API's answer: the paid ones ticked, the unpaid one shown, in their currency", async () => {
+  const { stripeInvoices } = await import("../src/stripe");
+
+  const json = JSON.parse(readFileSync(`${import.meta.dir}/pages/miro-invoices.json`, "utf8"));
+  const found = stripeInvoices(json, "Miro");
+
+  expect(found.map((f) => [f.label, f.amount, f.date, f.context, f.score >= 5])).toEqual([
+    ["Miro invoice", "$1,209.05", "2026-11-06", "Not paid yet", false],
+    ["Miro invoice", "$937.50", "2026-10-06", "", true],
+    ["Miro invoice", "$1,093.75", "2026-09-05", "", true],
+  ]);
+  expect(found[1]!.url).toBe("https://pay.stripe.com/invoice/acct_1Test/test_BBBBBBBBBBBBBBBBBBBBBBBBBBBB/pdf?s=ap");
+  expect(stripeInvoices({ invoices: [{ pdf: "https://example.com/invoice.pdf" }] }, "Miro")).toEqual([]);
+});
+
+it("on Miro's billing page, with no API call to be seen, reads its organisation's invoices at the rule's address", async () => {
+  const { found, read } = (await scan("miro-billing.html", "https://miro.com/app/settings/company/1234567890/billing/")).scan;
+
+  expect(found).toEqual([]);
+  expect(read).toEqual([
+    { url: "https://svc.eu01.miro.com/api/billing-and-payment/public/api/v1/organizations/1234567890/invoices", vendor: "Miro" },
+  ]);
 });

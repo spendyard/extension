@@ -6,6 +6,7 @@ import { disconnect, sendDocument, signedOut, whoAmI } from "./api";
 import { connection, connectUrl, forget, isConnectionChange, servers, type Connection } from "./connection";
 import { get, type Got } from "./fetch";
 import { follow, mostFollowed } from "./follow";
+import { stripeInvoices } from "./stripe";
 import type { Found, Scan } from "./found";
 import { isPendingChange, take } from "./pending";
 
@@ -32,13 +33,17 @@ const state = {
   ticked: new Set<string>(),
   status: new Map<string, Status>(),
   extras: [] as Extra[],
-  /** Invoice pages being opened for their PDFs (follow.ts). */
+  /** Invoice pages being opened (follow.ts) and billing APIs being read (stripe.ts), for their PDFs. */
   following: 0,
 };
 
 /** Each invoice page opened, by its URL: its PDF, or null when it had none. Kept while the panel is open. */
 const followed = new Map<string, Found | null>();
 const opening = new Set<string>();
+
+/** Each billing API read, by its URL: the invoices in it. Kept while the panel is open. */
+const read = new Map<string, Found[]>();
+const reading = new Set<string>();
 
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -188,9 +193,7 @@ function render() {
   const found = state.scan?.found ?? [];
 
   const where = state.scan ? new URL(state.scan.url).host : "";
-  const pages = state.following === 1 ? "1 invoice page" : `${state.following} invoice pages`;
-
-  ui.where.textContent = state.following > 0 ? `${where} · opening ${pages}` : where;
+  ui.where.textContent = state.following > 0 ? `${where} · looking for invoices…` : where;
   ui.list.replaceChildren(...found.map(foundItem));
 
   ui.empty.hidden = found.length > 0;
@@ -253,6 +256,7 @@ async function scan() {
 
     state.scan = merged;
     void followAll(scanned);
+    void readAll(tab.id, scanned);
   } catch {
     state.scan = null;
     state.scanError = "Chrome doesn't let extensions look at this page.";
@@ -261,14 +265,68 @@ async function scan() {
   render();
 }
 
-/** The scan with the PDFs already taken from its invoice pages. */
+/** The scan with the PDFs already taken from its invoice pages and billing APIs. */
 function withFollowed(scanned: Scan): Scan {
   const have = new Set(scanned.found.map((f) => f.id));
-  const taken = scanned.follow
-    .map((page) => followed.get(page.url))
-    .filter((f): f is Found => Boolean(f) && !have.has(f!.id));
+  const fromPages = scanned.follow.map((page) => followed.get(page.url));
+  const fromApis = scanned.read.flatMap((api) => read.get(api.url) ?? []);
+  const taken = [...fromPages, ...fromApis].filter((f): f is Found => Boolean(f) && !have.has(f!.id));
 
   return { ...scanned, found: [...scanned.found, ...taken] };
+}
+
+/**
+ * Reads the billing APIs a rule points to, in the tab, as the page would (its cookies, its origin), each once, and
+ * lists the Stripe invoices in them, the paid ones ticked. A GET, never anything else.
+ */
+async function readAll(tabId: number, scanned: Scan) {
+  const waiting = scanned.read.filter((api) => !read.has(api.url) && !reading.has(api.url));
+
+  for (const api of waiting) {
+    reading.add(api.url);
+    state.following += 1;
+    render();
+
+    const [result] = await chrome.scripting
+      .executeScript({
+        target: { tabId },
+        args: [api.url],
+        // Miro's answers 415 to a GET that doesn't say it's JSON.
+        func: async (url: string) => {
+          const response = await fetch(url, {
+            credentials: "include",
+            headers: { Accept: "application/json", "Content-Type": "application/json" },
+          });
+
+          return response.ok ? await response.text() : null;
+        },
+      })
+      .catch(() => [undefined]);
+
+    let invoices: Found[] = [];
+
+    try {
+      const text = result?.result;
+
+      invoices = typeof text === "string" ? stripeInvoices(JSON.parse(text), api.vendor) : [];
+    } catch {
+      invoices = [];
+    }
+
+    read.set(api.url, invoices);
+    reading.delete(api.url);
+    state.following -= 1;
+
+    if (state.scan?.url === scanned.url) {
+      const fromElsewhere = new Set([...followed.values(), ...[...read.values()].flat()].map((f) => f?.id));
+      const own = state.scan.found.filter((f) => !fromElsewhere.has(f.id));
+
+      state.scan = withFollowed({ ...state.scan, found: own });
+      invoices.filter((f) => f.score >= tickedFrom).forEach((f) => state.ticked.add(f.id));
+    }
+
+    render();
+  }
 }
 
 /** Opens the invoice pages a rule points to, two at a time, each once, adding each PDF as it comes. */
@@ -294,8 +352,8 @@ async function followAll(scanned: Scan) {
 
     // Still the page it was found on: listed in the list's own order, whichever page answered first, and ticked.
     if (pdf && state.scan?.url === scanned.url && !state.scan.found.some((f) => f.id === pdf.id)) {
-      const fromPages = new Set([...followed.values()].map((f) => f?.id));
-      const own = state.scan.found.filter((f) => !fromPages.has(f.id));
+      const fromElsewhere = new Set([...followed.values(), ...[...read.values()].flat()].map((f) => f?.id));
+      const own = state.scan.found.filter((f) => !fromElsewhere.has(f.id));
 
       state.scan = withFollowed({ ...state.scan, found: own });
       state.ticked.add(pdf.id);

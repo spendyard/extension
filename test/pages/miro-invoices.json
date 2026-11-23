@@ -1,0 +1,38 @@
+{
+  "invoices": [
+    {
+      "id": "in_1Test0000000000000000001",
+      "date": 1793963318,
+      "dueDate": null,
+      "paid": false,
+      "total": 120905,
+      "amountDue": 120905,
+      "currency": "usd",
+      "description": "RENEWAL",
+      "link": "https://invoice.stripe.com/i/acct_1Test/test_AAAAAAAAAAAAAAAAAAAAAAAAAAAA?s=ap",
+      "pdf": "https://pay.stripe.com/invoice/acct_1Test/test_AAAAAAAAAAAAAAAAAAAAAAAAAAAA/pdf?s=ap",
+      "paymentMethod": { "type": "card", "last4": "4242" }
+    },
+    {
+      "id": "in_1Test0000000000000000002",
+      "date": 1791284865,
+      "dueDate": null,
+      "paid": true,
+      "total": 93750,
+      "amountDue": 93750,
+      "currency": "usd",
+      "description": "RENEWAL",
+      "link": "https://invoice.stripe.com/i/acct_1Test/test_BBBBBBBBBBBBBBBBBBBBBBBBBBBB?s=ap",
+      "pdf": "https://pay.stripe.com/invoice/acct_1Test/test_BBBBBBBBBBBBBBBBBBBBBBBBBBBB/pdf?s=ap",
+      "paymentMethod": { "type": "card", "last4": "4242" }
+    },
+    {
+      "id": "in_1Test0000000000000000003",
+      "date": 1788606465,
+      "paid": true,
+      "total": 109375,
+      "currency": "usd",
+      "pdf": "https://pay.stripe.com/invoice/acct_1Test/test_CCCCCCCCCCCCCCCCCCCCCCCCCCCC/pdf?s=ap"
+    }
+  ]
+}

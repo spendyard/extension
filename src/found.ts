@@ -52,10 +52,17 @@ export interface ToFollow {
   date: string | null;
 }
 
-/** A page scanned, the receipts found on it, and the invoice pages to open for theirs. */
+/** A vendor's billing API to read for its Stripe invoices (a site rule's api): the panel reads it in the page. */
+export interface ToRead {
+  url: string;
+  vendor: string;
+}
+
+/** A page scanned, the receipts found on it, the invoice pages to open and the billing APIs to read for theirs. */
 export interface Scan {
   url: string;
   title: string;
   found: Found[];
   follow: ToFollow[];
+  read: ToRead[];
 }
