@@ -58,6 +58,17 @@ it("finds a Stripe-hosted invoice's PDF, whose path ends /pdf rather than .pdf",
   expect(found.map((f) => [f.label, f.amount, f.date])).toEqual([["Invoice | Acme Cloud", null, "Sep 14, 2026"]]);
 });
 
+it("names icon links by their tooltip, reads the payment's amount and not the card's digits, and ticks a row's receipt over its invoice", async () => {
+  const { found } = (await scan("payments.html")).scan;
+
+  expect(found.map((f) => [f.label, f.amount, f.date, new URL(f.url).pathname, f.score >= 5])).toEqual([
+    ["Download receipt", "$19.00", "2026-11-01", "/billing/receipt/abc123.pdf", true],
+    ["Download receipt", "$41.42", "2026-10-29", "/billing/receipt/def456.pdf", true],
+    // The same payment's invoice: shown, not ticked.
+    ["Download invoice", "$19.00", "2026-11-01", "/billing/invoice/abc123.pdf", false],
+  ]);
+});
+
 it("doesn't take a menu link to Invoices, or a shop's prices, for a receipt", async () => {
   const { found } = (await scan("shop.html")).scan;
 

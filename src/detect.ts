@@ -20,7 +20,8 @@ const downloadWords = /\b(download|pdf|view|print|last ned|skriv ut|vis|herunter
 
 const currency = String.raw`(?:[$€£¥]|\b(?:USD|EUR|GBP|NOK|SEK|DKK|CHF|kr\.?|,-))`;
 const number = String.raw`\d[\d\s.,']*\d|\d`;
-const amountPattern = new RegExp(`${currency}\\s?(?:${number})|(?:${number})\\s?${currency}`, "i");
+// A currency after a number only when no number follows it: "ending in 3776 $19.00" is $19.00, not "3776 $".
+const amountPattern = new RegExp(`${currency}\\s?(?:${number})|(?:${number})\\s?${currency}(?!\\s?\\d)`, "i");
 
 const months = "jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|mai|okt|des|mär|dez";
 const datePattern = new RegExp(
@@ -123,6 +124,17 @@ function linksToPdf(link: HTMLAnchorElement, url: URL): boolean {
   return pdfUrl.test(url.href) || type === "application/pdf" || /\.pdf$/i.test(downloadName);
 }
 
+/** A link's name: its text, or for an icon its aria-label, the element that labels it, its title or its tooltip. */
+function nameOf(link: HTMLAnchorElement): string {
+  const labelledBy = (link.getAttribute("aria-labelledby") ?? "")
+    .split(/\s+/)
+    .map((id) => (id ? document.getElementById(id)?.textContent ?? "" : ""))
+    .join(" ");
+  const tooltip = link.id ? document.querySelector(`tool-tip[for="${CSS.escape(link.id)}"]`)?.textContent ?? "" : "";
+
+  return [link.textContent, link.getAttribute("aria-label"), labelledBy, link.title, tooltip].map((t) => t?.trim() ?? "").find(Boolean) ?? "";
+}
+
 /** A link to a PDF scored: the words "receipt" or "invoice" on it count most; an amount and a date beside it, a little. */
 function scoreLink(link: HTMLAnchorElement, url: URL): Found | null {
   // Only PDFs: a link to a page, even one that calls itself an invoice, is left to be sent by hand.
@@ -130,7 +142,7 @@ function scoreLink(link: HTMLAnchorElement, url: URL): Found | null {
     return null;
   }
 
-  const text = squeeze(link.textContent || link.getAttribute("aria-label") || link.title || "");
+  const text = squeeze(nameOf(link));
   const name = fileNameOf(url);
   const said = `${text} ${name} ${url.pathname} ${url.search}`;
   const context = squeeze(contextOf(link));
@@ -177,7 +189,7 @@ function scoreLink(link: HTMLAnchorElement, url: URL): Found | null {
     plainName ||
     titleNamesReceipt ||
     text ||
-    url.hostname;
+    `Receipt from ${url.hostname}`;
 
   return {
     id: url.href,
@@ -243,6 +255,40 @@ function shownFile(): Found | null {
 /** The bar for showing a link at all. */
 const shownFrom = 3;
 
+/** Under the panel's bar for ticking (5): shown, not ticked. */
+const shownNotTicked = 4;
+
+/** Says it's a receipt, not an invoice: what was paid, rather than what was asked for. */
+const paidWords = /\b(receipts?|kvittering(?:er)?|kvitto|quittung|re[çc]us?|recibos?|ricevut[ae])\b/i;
+
+/**
+ * One row (a payment in a billing table) with more than one PDF, such as a receipt and an invoice: the receipt is
+ * ticked, the others shown but not ticked, so one payment isn't sent twice.
+ */
+function receiptFirst(links: { row: Element | null; said: string; item: Found }[]) {
+  const byRow = new Map<Element, typeof links>();
+
+  for (const link of links) {
+    if (link.row) {
+      byRow.set(link.row, [...(byRow.get(link.row) ?? []), link]);
+    }
+  }
+
+  for (const inRow of byRow.values()) {
+    const receipt = inRow.find((l) => paidWords.test(l.said));
+
+    if (inRow.length < 2 || !receipt) {
+      continue;
+    }
+
+    for (const other of inRow) {
+      if (other !== receipt) {
+        other.item.score = Math.min(other.item.score, shownNotTicked);
+      }
+    }
+  }
+}
+
 function scan(): Scan {
   const found = new Map<string, Found>();
 
@@ -261,14 +307,19 @@ function scan(): Scan {
   } else {
     embeddedPdfs().forEach(keep);
 
+    const links: { row: Element | null; said: string; item: Found }[] = [];
+
     for (const link of document.querySelectorAll<HTMLAnchorElement>("a[href]")) {
       const url = absolute(link.getAttribute("href") ?? "");
       const item = url && scoreLink(link, url);
 
-      if (item && item.score >= shownFrom) {
-        keep(item);
+      if (item && item.score >= shownFrom && !links.some((l) => l.item.id === item.id)) {
+        links.push({ row: link.closest("tr, li, [role=row]"), said: `${nameOf(link)} ${url.pathname}`, item });
       }
     }
+
+    receiptFirst(links);
+    links.forEach((l) => keep(l.item));
   }
 
   const ranked = [...found.values()].sort((a, b) => b.score - a.score);
