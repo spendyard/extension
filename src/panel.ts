@@ -5,6 +5,7 @@
 import { disconnect, sendDocument, signedOut, whoAmI } from "./api";
 import { connection, connectUrl, forget, isConnectionChange, servers, type Connection } from "./connection";
 import { get, type Got } from "./fetch";
+import { follow, mostFollowed } from "./follow";
 import type { Found, Scan } from "./found";
 import { isPendingChange, take } from "./pending";
 
@@ -31,7 +32,13 @@ const state = {
   ticked: new Set<string>(),
   status: new Map<string, Status>(),
   extras: [] as Extra[],
+  /** Invoice pages being opened for their PDFs (follow.ts). */
+  following: 0,
 };
+
+/** Each invoice page opened, by its URL: its PDF, or null when it had none. Kept while the panel is open. */
+const followed = new Map<string, Found | null>();
+const opening = new Set<string>();
 
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -180,11 +187,15 @@ function render() {
 
   const found = state.scan?.found ?? [];
 
-  ui.where.textContent = state.scan ? new URL(state.scan.url).host : "";
+  const where = state.scan ? new URL(state.scan.url).host : "";
+  const pages = state.following === 1 ? "1 invoice page" : `${state.following} invoice pages`;
+
+  ui.where.textContent = state.following > 0 ? `${where} · opening ${pages}` : where;
   ui.list.replaceChildren(...found.map(foundItem));
 
   ui.empty.hidden = found.length > 0;
-  ui.empty.textContent = state.scanError ?? (state.scan ? "No PDFs found on this page." : "Looking…");
+  ui.empty.textContent =
+    state.scanError ?? (!state.scan || state.following > 0 ? "Looking…" : "No PDFs found on this page.");
 
   renderFooter();
 }
@@ -230,22 +241,72 @@ async function scan() {
       throw new Error("no answer");
     }
 
-    // The likely ones ticked, the first time each is seen.
+    // With the PDFs already taken from its invoice pages; the likely ones ticked, the first time each is seen.
+    const merged = withFollowed(scanned);
     const before = new Set(state.scan?.found.map((f) => f.id) ?? []);
 
-    for (const found of scanned.found) {
+    for (const found of merged.found) {
       if (!before.has(found.id) && found.score >= tickedFrom) {
         state.ticked.add(found.id);
       }
     }
 
-    state.scan = scanned;
+    state.scan = merged;
+    void followAll(scanned);
   } catch {
     state.scan = null;
     state.scanError = "Chrome doesn't let extensions look at this page.";
   }
 
   render();
+}
+
+/** The scan with the PDFs already taken from its invoice pages. */
+function withFollowed(scanned: Scan): Scan {
+  const have = new Set(scanned.found.map((f) => f.id));
+  const taken = scanned.follow
+    .map((page) => followed.get(page.url))
+    .filter((f): f is Found => Boolean(f) && !have.has(f!.id));
+
+  return { ...scanned, found: [...scanned.found, ...taken] };
+}
+
+/** Opens the invoice pages a rule points to, two at a time, each once, adding each PDF as it comes. */
+async function followAll(scanned: Scan) {
+  const waiting = scanned.follow.filter((page) => !followed.has(page.url) && !opening.has(page.url)).slice(0, mostFollowed);
+
+  waiting.forEach((page) => opening.add(page.url));
+  state.following += waiting.length;
+  render();
+
+  const next = async (): Promise<void> => {
+    const page = waiting.shift();
+
+    if (!page) {
+      return;
+    }
+
+    const pdf = await follow(page).catch(() => null);
+
+    followed.set(page.url, pdf);
+    opening.delete(page.url);
+    state.following -= 1;
+
+    // Still the page it was found on: listed in the list's own order, whichever page answered first, and ticked.
+    if (pdf && state.scan?.url === scanned.url && !state.scan.found.some((f) => f.id === pdf.id)) {
+      const fromPages = new Set([...followed.values()].map((f) => f?.id));
+      const own = state.scan.found.filter((f) => !fromPages.has(f.id));
+
+      state.scan = withFollowed({ ...state.scan, found: own });
+      state.ticked.add(pdf.id);
+    }
+
+    render();
+
+    return next();
+  };
+
+  await Promise.all([next(), next()]);
 }
 
 // ——— Sending ———

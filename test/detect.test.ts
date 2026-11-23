@@ -1,6 +1,6 @@
 // Finding receipts on pages (src/detect.ts), on a few kept as they come:
-// a table of invoices, an invoice hosted by Stripe, an order confirmation, and
-// a shop with a menu link.
+// a table of invoices, an invoice hosted by Stripe, an order confirmation, a
+// shop with a menu link; and the sites with rules of their own (src/sites.ts).
 
 import { expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -11,8 +11,8 @@ const detect = await Bun.build({ entrypoints: [`${import.meta.dir}/../src/detect
 const code = await detect.outputs[0]!.text();
 
 /** The page, scanned as the panel does it. */
-async function scan(name: string): Promise<{ scan: Scan; snapshot: string }> {
-  const window = new Window({ url: `https://acme.example/${name}` });
+async function scan(name: string, url = `https://acme.example/${name}`): Promise<{ scan: Scan; snapshot: string }> {
+  const window = new Window({ url });
 
   window.document.write(readFileSync(`${import.meta.dir}/pages/${name}`, "utf8"));
   window.eval(code);
@@ -94,4 +94,46 @@ it("names a hosted invoice by its page's title, or by its site when it has none"
   expect(nameFor(null, found, "text/html", "Invoice #1234 from Acme Cloud")).toBe("Invoice #1234 from Acme Cloud.html");
   expect(nameFor(null, found, "text/html")).toBe("Receipt from invoice.stripe.com.html");
   expect(nameFor("Invoice-1234.pdf", found, "application/pdf")).toBe("Invoice-1234.pdf");
+});
+
+it("lists a Vercel invoice list's rows to open, each with its amount and date, as its rule says", async () => {
+  const { found, follow } = (await scan("vercel-invoices.html", "https://vercel.com/account/settings/invoices")).scan;
+
+  expect(found).toEqual([]);
+  expect(follow.map((f) => [f.label, f.amount, f.date, new URL(f.url).pathname.slice(0, 26)])).toEqual([
+    ["Vercel invoice", "$25.00", "Sep 14, 2026", "/account/invoices/inv_c3Ry"],
+    ["Vercel invoice", "$25.00", "Aug 14, 2026", "/account/invoices/inv_c3Ry"],
+  ]);
+});
+
+it("takes the Stripe PDF from a Vercel invoice's own page, query and all", async () => {
+  const { pdfIn } = await import("../src/follow");
+  const { rules } = await import("../src/sites");
+
+  const html = readFileSync(`${import.meta.dir}/pages/vercel-invoice.html`, "utf8");
+  const pdf = rules.find((r) => r.name === "Vercel")!.follow!.pdf;
+
+  expect(pdfIn(html, "https://vercel.com/account/invoices/inv_1", pdf)).toBe(
+    "https://pay.stripe.com/invoice/acct_1Abc/test_YWNjdF8xQWJjLF9UZXN0/pdf?s=ap&r=1",
+  );
+  expect(pdfIn("<a href='/account/support'>Help</a>", "https://vercel.com/", pdf)).toBeNull();
+});
+
+it("on GitHub's payment history, ticks each receipt PDF by its rule, and opens nothing", async () => {
+  const { found, follow } = (await scan("payments.html", "https://github.com/organizations/acme/billing/history")).scan;
+
+  expect(found.filter((f) => f.score >= 5).map((f) => [f.label, f.amount, new URL(f.url).pathname])).toEqual([
+    ["GitHub receipt", "$19.00", "/billing/receipt/abc123.pdf"],
+    ["GitHub receipt", "$41.42", "/billing/receipt/def456.pdf"],
+  ]);
+  expect(follow).toEqual([]);
+});
+
+it("finds a site's rule by its host, a subdomain included, and its page", async () => {
+  const { ruleFor } = await import("../src/sites");
+
+  expect(ruleFor(new URL("https://vercel.com/account/settings/invoices"))?.name).toBe("Vercel");
+  expect(ruleFor(new URL("https://github.com/organizations/acme/billing/history"))?.name).toBe("GitHub");
+  expect(ruleFor(new URL("https://github.com/acme/repo"))).toBeNull();
+  expect(ruleFor(new URL("https://notvercel.com/account/settings/invoices"))).toBeNull();
 });

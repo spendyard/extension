@@ -34,9 +34,28 @@ export function looksLikeId(name: string): boolean {
   return /^[A-Za-z0-9_]{16,}$/.test(plain) || /[A-Za-z0-9]{24,}/.test(plain);
 }
 
-/** A page scanned, and the receipts found on it. */
+/**
+ * A row of a billing list that links to its invoice's own page, the PDF only there (a site rule's follow): the
+ * panel opens the page and takes the PDF.
+ */
+export interface ToFollow {
+  /** The invoice's page. */
+  url: string;
+
+  /** The PDF to take from it, by its URL without its query (the rule's pattern). */
+  pdf: string;
+
+  /** What to call it: "Vercel invoice". */
+  label: string;
+
+  amount: string | null;
+  date: string | null;
+}
+
+/** A page scanned, the receipts found on it, and the invoice pages to open for theirs. */
 export interface Scan {
   url: string;
   title: string;
   found: Found[];
+  follow: ToFollow[];
 }

@@ -9,7 +9,8 @@
 // name, the words, amounts and dates around it. Nothing here is certain, so
 // the panel shows everything above a low bar and ticks the likely ones.
 
-import { looksLikeId, type Found, type Scan } from "./found";
+import { looksLikeId, type Found, type Scan, type ToFollow } from "./found";
+import { matches, ruleFor, type SiteRule } from "./sites";
 
 /** "Receipt" and "invoice" in the languages Spendyard's customers write in. */
 const receiptWords =
@@ -136,9 +137,13 @@ function nameOf(link: HTMLAnchorElement): string {
 }
 
 /** A link to a PDF scored: the words "receipt" or "invoice" on it count most; an amount and a date beside it, a little. */
-function scoreLink(link: HTMLAnchorElement, url: URL): Found | null {
+function scoreLink(link: HTMLAnchorElement, url: URL, rule: SiteRule | null): Found | null {
+  // A site's rule knows its receipts and invoices: those are ticked, whatever they say.
+  const ruleReceipt = matches(rule?.receipts, url.pathname);
+  const ruleInvoice = matches(rule?.invoices, url.pathname);
+
   // Only PDFs: a link to a page, even one that calls itself an invoice, is left to be sent by hand.
-  if (!linksToPdf(link, url)) {
+  if (!linksToPdf(link, url) && !ruleReceipt && !ruleInvoice) {
     return null;
   }
 
@@ -177,12 +182,19 @@ function scoreLink(link: HTMLAnchorElement, url: URL): Found | null {
     score += 1;
   }
 
+  if (ruleReceipt || ruleInvoice) {
+    score = Math.max(score, 8);
+  }
+
   // "View invoice" says more than "in_123"; "invoice-2026-11.pdf" more than "Download".
   // A path ending /pdf (Stripe's) has no name of its own: "pdf" says nothing.
   const namedFile = /\.\w{2,4}$/.test(name) && !looksLikeId(name);
   const plainName = !looksLikeId(name) && name.toLowerCase() !== "pdf" && name;
   const titleNamesReceipt = receiptWords.test(document.title) && squeeze(document.title);
+  // A rule's receipt is named by its vendor: GitHub's icons say View receipt even on the PDF.
+  const ruleLabel = rule && (ruleReceipt ? `${rule.name} receipt` : ruleInvoice ? `${rule.name} invoice` : "");
   const label =
+    ruleLabel ||
     (receiptWords.test(text) && text) ||
     (namedFile && name) ||
     (!downloadWords.test(text) && text) ||
@@ -255,6 +267,13 @@ function shownFile(): Found | null {
 /** The bar for showing a link at all. */
 const shownFrom = 3;
 
+/** A PDF link found, with its row and whether it is a receipt (by a rule, or by what it says). */
+interface Linked {
+  row: Element | null;
+  receipt: boolean;
+  item: Found;
+}
+
 /** Under the panel's bar for ticking (5): shown, not ticked. */
 const shownNotTicked = 4;
 
@@ -265,8 +284,8 @@ const paidWords = /\b(receipts?|kvittering(?:er)?|kvitto|quittung|re[çc]us?|rec
  * One row (a payment in a billing table) with more than one PDF, such as a receipt and an invoice: the receipt is
  * ticked, the others shown but not ticked, so one payment isn't sent twice.
  */
-function receiptFirst(links: { row: Element | null; said: string; item: Found }[]) {
-  const byRow = new Map<Element, typeof links>();
+function receiptFirst(links: Linked[]) {
+  const byRow = new Map<Element, Linked[]>();
 
   for (const link of links) {
     if (link.row) {
@@ -275,7 +294,7 @@ function receiptFirst(links: { row: Element | null; said: string; item: Found }[
   }
 
   for (const inRow of byRow.values()) {
-    const receipt = inRow.find((l) => paidWords.test(l.said));
+    const receipt = inRow.find((l) => l.receipt);
 
     if (inRow.length < 2 || !receipt) {
       continue;
@@ -289,8 +308,40 @@ function receiptFirst(links: { row: Element | null; said: string; item: Found }[
   }
 }
 
+/** The rows of a billing list that link to their invoice's own page, for a rule that says to open them. */
+function toFollow(rule: SiteRule | null): ToFollow[] {
+  const follow = rule?.follow;
+
+  if (!rule || !follow) {
+    return [];
+  }
+
+  const pages = new Map<string, ToFollow>();
+
+  for (const link of document.querySelectorAll<HTMLAnchorElement>("a[href]")) {
+    const url = absolute(link.getAttribute("href") ?? "");
+
+    if (!url || url.host !== location.host || !matches(follow.pages, url.pathname) || pages.has(url.href)) {
+      continue;
+    }
+
+    const context = squeeze(contextOf(link));
+
+    pages.set(url.href, {
+      url: url.href,
+      pdf: follow.pdf,
+      label: `${rule.name} invoice`,
+      amount: amountIn(context),
+      date: dateIn(context),
+    });
+  }
+
+  return [...pages.values()];
+}
+
 function scan(): Scan {
   const found = new Map<string, Found>();
+  const rule = ruleFor(new URL(location.href));
 
   const keep = (item: Found) => {
     const before = found.get(item.id);
@@ -307,15 +358,19 @@ function scan(): Scan {
   } else {
     embeddedPdfs().forEach(keep);
 
-    const links: { row: Element | null; said: string; item: Found }[] = [];
+    const links: Linked[] = [];
 
     for (const link of document.querySelectorAll<HTMLAnchorElement>("a[href]")) {
       const url = absolute(link.getAttribute("href") ?? "");
-      const item = url && scoreLink(link, url);
+      const item = url && scoreLink(link, url, rule);
 
-      if (item && item.score >= shownFrom && !links.some((l) => l.item.id === item.id)) {
-        links.push({ row: link.closest("tr, li, [role=row]"), said: `${nameOf(link)} ${url.pathname}`, item });
+      if (!url || !item || item.score < shownFrom || links.some((l) => l.item.id === item.id)) {
+        continue;
       }
+
+      const receipt = rule?.receipts ? matches(rule.receipts, url.pathname) : paidWords.test(`${nameOf(link)} ${url.pathname}`);
+
+      links.push({ row: link.closest("tr, li, [role=row]"), receipt, item });
     }
 
     receiptFirst(links);
@@ -324,7 +379,9 @@ function scan(): Scan {
 
   const ranked = [...found.values()].sort((a, b) => b.score - a.score);
 
-  return { url: location.href, title: document.title, found: ranked };
+  const follow = file ? [] : toFollow(rule);
+
+  return { url: location.href, title: document.title, found: ranked, follow };
 }
 
 /** The page as it is now, as one HTML file for the reader, when it's sent by hand: no scripts, and links that still lead where they did. */
