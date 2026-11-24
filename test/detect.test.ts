@@ -361,3 +361,37 @@ it("doesn't open a row's page when the row has its PDF already, nor count it twi
     { type: "spendyard.count", url: "https://github.com/organizations/acme/billing/history", found: 2, more: false },
   ]);
 });
+
+// ——— Remembering uploads ———
+
+it("remembers what was uploaded, for each Spendyard and organisation, and knows a Stripe invoice under its next address", async () => {
+  const stored: Record<string, unknown> = {};
+
+  Object.assign(globalThis, {
+    chrome: {
+      storage: {
+        local: {
+          get: async (key: string) => (key in stored ? { [key]: stored[key] } : {}),
+          set: async (items: Record<string, unknown>) => void Object.assign(stored, items),
+        },
+      },
+    },
+  });
+
+  const { remember, remembered } = await import("../src/uploaded");
+  const { receiptKeyOf } = await import("../src/found");
+
+  const acme = { server: "https://staging.spendyard.com", token: "t", org: { id: "1", slug: "acme", name: "Acme" }, email: "a@acme.example" };
+  const other = { ...acme, org: { id: "2", slug: "other", name: "Other" } };
+
+  const token = (text: string) => `live_${btoa(text).replace(/=+$/, "")}`;
+  const sent = receiptKeyOf(`https://pay.stripe.com/invoice/acct_1Abc/${token("acct_1Abc,_InvSep,1860000000")}/pdf?s=ap`)!;
+  const later = receiptKeyOf(`https://pay.stripe.com/invoice/acct_1Abc/${token("acct_1Abc,_InvSep,1869999999")}/pdf?s=em`)!;
+
+  await remember(acme, [sent], "42");
+
+  expect((await remembered(acme)).get(later)?.documentId).toBe("42");
+  expect((await remembered(other)).size).toBe(0);
+  expect(receiptKeyOf("https://acme.example/files/invoice.pdf")).toBe("https://acme.example/files/invoice.pdf");
+  expect(receiptKeyOf("blob:https://acme.example/1b2c")).toBeNull();
+});

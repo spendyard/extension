@@ -10,7 +10,8 @@ import { get, type Got } from "./fetch";
 import { bytesOf, pdfDownload, type Downloaded } from "./downloads";
 import { follow, mostFollowed } from "./follow";
 import { stripeInvoices } from "./stripe";
-import { likely, olderThanTicked, once, receiptKey, ticksByDefault, type Found, type Scan } from "./found";
+import { likely, olderThanTicked, once, receiptKey, receiptKeyOf, ticksByDefault, type Found, type Scan } from "./found";
+import { remember, remembered, type Remembered } from "./uploaded";
 import { isPendingChange, take } from "./pending";
 
 type Status =
@@ -45,7 +46,31 @@ const state = {
   downloaded: [] as Downloaded[],
   /** The page's Load more pressed by the panel itself, on this page. */
   loadPresses: 0,
+  /** What this browser has uploaded to the connected organisation, by receipt (uploaded.ts). */
+  uploaded: new Map<string, Remembered>(),
 };
+
+/** Already uploaded from this browser, to the connected organisation. */
+function isUploaded(found: Found): boolean {
+  return state.uploaded.has(receiptKey(found));
+}
+
+/** Ticked to begin with: the likely ones of the last year, not those already in Spendyard. */
+function ticks(found: Found): boolean {
+  return ticksByDefault(found) && !isUploaded(found);
+}
+
+/** Those already uploaded show so, unticked, as if just sent: Already in Spendyard · Open. */
+function markUploaded() {
+  for (const found of state.scan?.found ?? []) {
+    const known = state.uploaded.get(receiptKey(found));
+
+    if (known && !state.status.has(found.id)) {
+      state.status.set(found.id, { state: "sent", documentId: known.documentId, seen: true });
+      state.ticked.delete(found.id);
+    }
+  }
+}
 
 /**
  * The most the panel presses a list's Load more by itself: enough for a year of monthly invoices from a list that
@@ -239,7 +264,9 @@ async function uploadDownloaded(downloaded: Downloaded) {
     return;
   }
 
-  await sendOne(downloadKey(downloaded), () => bytesOf(downloaded, state.tabId));
+  const receipt = receiptKeyOf(downloaded.url);
+
+  await sendOne(downloadKey(downloaded), () => bytesOf(downloaded, state.tabId), receipt ? [receipt] : []);
 }
 
 /** A download finished: offered when it's a PDF the person downloaded, not one of the panel's own. */
@@ -331,6 +358,8 @@ function plural(n: number, one: string, many: string): string {
 function render() {
   const connected = state.connection !== null;
 
+  markUploaded();
+
   ui.who.textContent = connected ? `${state.connection!.org.name} · ${state.connection!.email}` : "Not connected to Spendyard";
   ui.disconnect.hidden = !connected;
   ui.openConnect.hidden = connected || state.connecting;
@@ -355,6 +384,7 @@ function render() {
   // The count is of the likely ones, as the badge's; the list has the others too.
   const receipts = found.filter(likely).length;
   const others = found.length - receipts;
+  const inSpendyard = found.filter(isUploaded).length;
 
   ui.show.hidden = found.length === 0;
   ui.count.textContent = String(receipts);
@@ -362,6 +392,7 @@ function render() {
   ui.countTicked.textContent = [
     `${found.filter((f) => state.ticked.has(f.id)).length} ticked, from the last 12 months`,
     others > 0 ? `and ${plural(others, "other PDF", "other PDFs")}` : "",
+    inSpendyard > 0 ? `${inSpendyard} already in Spendyard` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -453,7 +484,7 @@ async function scanOnce() {
     const before = new Set(state.scan?.found.map((f) => f.id) ?? []);
 
     for (const found of merged.found) {
-      if (!before.has(found.id) && ticksByDefault(found)) {
+      if (!before.has(found.id) && ticks(found)) {
         state.ticked.add(found.id);
       }
     }
@@ -560,7 +591,7 @@ async function readAll(tabId: number, scanned: Scan) {
       // Only those listed: one the page or an invoice page had already found is ticked as that.
       const listed = new Set(state.scan.found.map((f) => f.id));
 
-      invoices.filter((f) => listed.has(f.id) && ticksByDefault(f)).forEach((f) => state.ticked.add(f.id));
+      invoices.filter((f) => listed.has(f.id) && ticks(f)).forEach((f) => state.ticked.add(f.id));
     }
 
     render();
@@ -595,7 +626,7 @@ async function followAll(scanned: Scan) {
 
       state.scan = withFollowed({ ...state.scan, found: own });
 
-      if (ticksByDefault(pdf)) {
+      if (ticks(pdf)) {
         state.ticked.add(pdf.id);
       }
     }
@@ -611,7 +642,8 @@ async function followAll(scanned: Scan) {
 // ——— Sending ———
 
 /** Sends one receipt, keeping its status; a token that's stopped working disconnects. */
-async function sendOne(id: string, getFile: () => Promise<Got>) {
+/** Uploads one, keeping its status, and remembers it as its receipts; a token that's stopped working disconnects. */
+async function sendOne(id: string, getFile: () => Promise<Got>, receipts: string[] = []) {
   const current = state.connection;
 
   if (!current) {
@@ -627,6 +659,12 @@ async function sendOne(id: string, getFile: () => Promise<Got>) {
 
     state.status.set(id, { state: "sent", ...sent });
     state.ticked.delete(id);
+
+    // Sent, or the server had it already: either way, known as in Spendyard next time.
+    if (sent.documentId) {
+      await remember(current, receipts, sent.documentId).catch(() => undefined);
+      receipts.forEach((receipt) => state.uploaded.set(receipt, { documentId: sent.documentId, at: Date.now() }));
+    }
   } catch (e) {
     if (signedOut(e)) {
       await forget();
@@ -657,7 +695,7 @@ async function sendTicked() {
 
   // One after another: a site that hands out invoices one at a time isn't asked for ten at once.
   for (const found of ticked) {
-    await sendOne(found.id, () => get(tabId, found));
+    await sendOne(found.id, () => get(tabId, found), [receiptKey(found)]);
   }
 }
 
@@ -691,7 +729,7 @@ async function sendPending() {
     const id = `${found.id}#${Date.now()}`;
 
     state.extras.unshift({ id, label: found.label, kind: found.kind });
-    await sendOne(id, () => get(tabId, found));
+    await sendOne(id, () => get(tabId, found), found.kind === "file" ? [receiptKey(found)] : []);
   }
 }
 
@@ -748,11 +786,23 @@ async function downloadTicked() {
 // ——— Connecting ———
 
 async function loadConnection() {
+  const before = state.connection;
+
   state.connection = await connection();
 
   if (state.connection) {
     state.connecting = false;
   }
+
+  // Another organisation, or none: what was sent or known as in Spendyard was the last one's.
+  const same = before?.server === state.connection?.server && before?.org.id === state.connection?.org.id;
+
+  if (!same) {
+    state.status.clear();
+  }
+
+  // What this browser uploaded there: another organisation, or none, knows nothing of it.
+  state.uploaded = state.connection ? await remembered(state.connection).catch(() => new Map()) : new Map();
 
   render();
 
@@ -862,7 +912,8 @@ function setUp() {
   });
 
   ui.tickAll.addEventListener("click", () => {
-    (state.scan?.found ?? []).forEach((f) => state.ticked.add(f.id));
+    // Not those sent already, or already in Spendyard.
+    (state.scan?.found ?? []).filter((f) => state.status.get(f.id)?.state !== "sent").forEach((f) => state.ticked.add(f.id));
     render();
   });
 

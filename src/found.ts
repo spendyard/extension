@@ -150,17 +150,23 @@ export function stripeInvoiceOf(url: URL): string | null {
  * comes with another token from its page and from the billing API, as Vercel's do), anything else by its id.
  */
 export function receiptKey(found: Found): string {
+  return receiptKeyOf(found.url) ?? found.id;
+}
+
+/** A Stripe-hosted invoice's key from its address, or the address itself; null when it isn't one. */
+export function receiptKeyOf(address: string): string | null {
   try {
-    const stripe = stripeInvoiceOf(new URL(found.url));
+    const url = new URL(address);
+    const stripe = stripeInvoiceOf(url);
 
     if (stripe) {
       return `stripe:${stripe}`;
     }
-  } catch {
-    // Not an address: its id.
-  }
 
-  return found.id;
+    return /^https?:$/.test(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Each receipt once, the first of it kept: found on the page, from its invoice pages and from its billing API. */
