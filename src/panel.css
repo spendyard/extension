@@ -233,3 +233,56 @@ select {
   border-color: var(--brand);
   color: var(--ink);
 }
+
+/* ——— Count first, list on click ——— */
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.count {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  margin: 12px 0 4px;
+  padding: 24px 16px;
+  border-radius: 10px;
+  background: var(--card);
+}
+
+.count:hover {
+  border-color: var(--brand);
+}
+
+.number {
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.count-label {
+  font-weight: 600;
+}
+
+.show {
+  margin-top: 10px;
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.centred {
+  text-align: center;
+}
+
+.ticking {
+  display: flex;
+  gap: 2px;
+}
+
+.status.saved {
+  color: var(--good);
+}

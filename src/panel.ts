@@ -1,6 +1,8 @@
-// The side panel: connecting to Spendyard; the receipts on the page in the
-// active tab (detect.ts), the likely ones ticked, to send; and receipts sent
-// from the right-click menu (pending.ts) or dropped on it.
+// The side panel: how many receipts the page in the active tab has
+// (detect.ts, and the invoice pages and billing APIs it points to), and on a
+// click the list, the likely ones ticked, to download to the Downloads folder or
+// upload to Spendyard; receipts sent from the right-click menu (pending.ts) or
+// dropped on it; and connecting to Spendyard, which only uploading needs.
 
 import { disconnect, sendDocument, signedOut, whoAmI } from "./api";
 import { connection, connectUrl, forget, isConnectionChange, servers, type Connection } from "./connection";
@@ -13,6 +15,8 @@ import { isPendingChange, take } from "./pending";
 type Status =
   | { state: "sending" }
   | { state: "sent"; documentId: string; seen: boolean }
+  | { state: "saving" }
+  | { state: "saved" }
   | { state: "failed"; message: string };
 
 /** Sent from the right-click menu or dropped here: shown at the top until the panel closes. */
@@ -32,6 +36,10 @@ const state = {
   extras: [] as Extra[],
   /** Invoice pages being opened (follow.ts) and billing APIs being read (stripe.ts), for their PDFs. */
   following: 0,
+  /** The count first; the list once it's asked for. */
+  view: "summary" as "summary" | "list",
+  /** Connecting, asked for, or by Upload while not connected. */
+  connecting: false,
 };
 
 /** Each invoice page opened, by its URL: its PDF, or null when it had none. Kept while the panel is open. */
@@ -50,9 +58,23 @@ const ui = {
   server: element<HTMLSelectElement>("server"),
   connectButton: element<HTMLButtonElement>("connect-button"),
   connectNote: element<HTMLElement>("connect-note"),
-  connected: element<HTMLElement>("connected"),
+  openConnect: element<HTMLButtonElement>("open-connect"),
+  closeConnect: element<HTMLButtonElement>("close-connect"),
   who: element<HTMLElement>("who"),
   disconnect: element<HTMLButtonElement>("disconnect"),
+  main: element<HTMLElement>("main"),
+  summary: element<HTMLElement>("summary"),
+  show: element<HTMLButtonElement>("show"),
+  count: element<HTMLElement>("count"),
+  countLabel: element<HTMLElement>("count-label"),
+  countTicked: element<HTMLElement>("count-ticked"),
+  still: element<HTMLElement>("still"),
+  found: element<HTMLElement>("found"),
+  back: element<HTMLButtonElement>("back"),
+  tickAll: element<HTMLButtonElement>("tick-all"),
+  tickNone: element<HTMLButtonElement>("tick-none"),
+  actions: element<HTMLElement>("actions"),
+  download: element<HTMLButtonElement>("download"),
   sent: element<HTMLUListElement>("sent"),
   where: element<HTMLElement>("where"),
   list: element<HTMLUListElement>("list"),
@@ -87,6 +109,14 @@ function statusLine(status: Status | undefined): HTMLElement | null {
     return make("div", "status failed", status.message);
   }
 
+  if (status.state === "saving") {
+    return make("div", "status", "Downloading…");
+  }
+
+  if (status.state === "saved") {
+    return make("div", "status saved", "Saved to Downloads");
+  }
+
   const line = make("div", "status sent", status.seen ? "Already in Spendyard · " : "Sent · ");
   const link = make("a", "", "Open");
 
@@ -97,7 +127,7 @@ function statusLine(status: Status | undefined): HTMLElement | null {
   return line;
 }
 
-const kindWords: Record<string, string> = { file: "File", page: "Page", dropped: "Dropped" };
+const kindWords: Record<string, string> = { file: "PDF", page: "Page", dropped: "Dropped" };
 
 function foundItem(found: Found): HTMLLIElement {
   const item = make("li", "item");
@@ -106,7 +136,7 @@ function foundItem(found: Found): HTMLLIElement {
 
   box.type = "checkbox";
   box.checked = state.ticked.has(found.id);
-  box.disabled = status?.state === "sending" || status?.state === "sent";
+  box.disabled = status?.state === "sending" || status?.state === "sent" || status?.state === "saving";
   box.addEventListener("change", () => {
     if (box.checked) {
       state.ticked.add(found.id);
@@ -160,42 +190,69 @@ function extraItem(extra: Extra): HTMLLIElement {
   return item;
 }
 
-function renderFooter() {
-  const sendable = [...state.ticked].filter((id) => {
+/** Ticked, and not on its way already. */
+function waiting(busy: Status["state"][]): string[] {
+  return [...state.ticked].filter((id) => {
     const status = state.status.get(id)?.state;
 
-    return status !== "sending" && status !== "sent";
+    return !status || !busy.includes(status);
   });
+}
 
-  ui.send.disabled = sendable.length === 0;
-  ui.send.textContent = sendable.length > 1 ? `Send ${sendable.length}` : "Send";
+function renderFooter() {
+  const toUpload = waiting(["sending", "sent", "saving"]);
+  const toDownload = waiting(["sending", "saving"]);
+  const many = (n: number) => (n > 1 ? ` ${n}` : "");
 
-  // The page itself, by hand: detection only finds PDFs.
-  ui.sendPage.hidden = !state.scan || state.scanError !== null;
+  ui.actions.hidden = state.view !== "list" || state.connecting;
+
+  ui.download.disabled = toDownload.length === 0;
+  ui.download.textContent = `Download${many(toDownload.length)}`;
+
+  // Not connected: Upload asks to connect first; downloading needs no one.
+  ui.send.disabled = toUpload.length === 0;
+  ui.send.textContent = state.connection ? `Upload${many(toUpload.length)}` : "Connect to upload";
+
+  // The page itself, for when it is a receipt the detection missed.
+  ui.sendPage.hidden = !state.connection || !state.scan || state.scanError !== null;
+}
+
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
 function render() {
   const connected = state.connection !== null;
 
-  ui.connect.hidden = connected;
-  ui.connected.hidden = !connected;
+  ui.who.textContent = connected ? `${state.connection!.org.name} · ${state.connection!.email}` : "Not connected to Spendyard";
+  ui.disconnect.hidden = !connected;
+  ui.openConnect.hidden = connected || state.connecting;
 
-  if (!state.connection) {
-    return;
-  }
+  ui.connect.hidden = connected || !state.connecting;
+  ui.main.hidden = state.connecting && !connected;
 
-  ui.who.textContent = `${state.connection.org.name} · ${state.connection.email}`;
   ui.sent.replaceChildren(...state.extras.map(extraItem));
 
   const found = state.scan?.found ?? [];
-
+  const looking = !state.scan || state.following > 0;
   const where = state.scan ? new URL(state.scan.url).host : "";
-  ui.where.textContent = state.following > 0 ? `${where} · looking for invoices…` : where;
-  ui.list.replaceChildren(...found.map(foundItem));
 
-  ui.empty.hidden = found.length > 0;
-  ui.empty.textContent =
-    state.scanError ?? (!state.scan || state.following > 0 ? "Looking…" : "No PDFs found on this page.");
+  // First the count, live as invoice pages and billing APIs answer; the list on a click.
+  ui.summary.hidden = state.view !== "summary";
+  ui.found.hidden = state.view !== "list";
+
+  ui.where.textContent = where;
+  ui.show.hidden = found.length === 0;
+  ui.count.textContent = String(found.length);
+  ui.countLabel.textContent = `${found.length === 1 ? "receipt" : "receipts"} found on this page`;
+  ui.countTicked.textContent = found.length > 0 ? `${plural(state.ticked.size, "ticked", "ticked")}: the likely ones of the last 12 months` : "";
+  ui.still.hidden = !(state.scan && state.following > 0);
+
+  ui.empty.hidden = found.length > 0 && !state.scanError;
+  ui.empty.textContent = state.scanError ?? (looking ? "Looking for receipts…" : "No receipts found on this page.");
+
+  ui.list.replaceChildren(...found.map(foundItem));
+  ui.drop.hidden = !connected;
 
   renderFooter();
 }
@@ -220,9 +277,11 @@ async function scan() {
   state.tabId = tab.id;
   state.scanError = null;
 
+  // Another page: its count first.
   if (!sameTab) {
     state.scan = null;
     state.ticked.clear();
+    state.view = "summary";
   }
 
   render();
@@ -405,6 +464,14 @@ async function sendTicked() {
   const tabId = state.tabId;
   const ticked = (state.scan?.found ?? []).filter((f) => state.ticked.has(f.id));
 
+  // Uploading is what needs Spendyard: connect first, the ticks kept.
+  if (!state.connection) {
+    state.connecting = true;
+    render();
+
+    return;
+  }
+
   if (tabId === null) {
     return;
   }
@@ -463,10 +530,51 @@ async function sendFiles(files: FileList | File[]) {
   }
 }
 
+/**
+ * Saves the ticked ones to the Downloads folder, one after another, by the name the upload would give them. Fetched
+ * as for an upload (fetch.ts), so a sign-in page or something that isn't a receipt fails here too.
+ */
+async function downloadTicked() {
+  const tabId = state.tabId;
+  const ticked = (state.scan?.found ?? []).filter((f) => state.ticked.has(f.id) && state.status.get(f.id)?.state !== "saving");
+
+  if (tabId === null) {
+    return;
+  }
+
+  for (const found of ticked) {
+    state.status.set(found.id, { state: "saving" });
+    render();
+
+    try {
+      const file = await get(tabId, found);
+      const blob = URL.createObjectURL(new Blob([file.bytes], { type: file.contentType }));
+
+      try {
+        await chrome.downloads.download({ url: blob, filename: file.name, conflictAction: "uniquify", saveAs: false });
+      } finally {
+        // The download has its own copy once it's started.
+        setTimeout(() => URL.revokeObjectURL(blob), 60_000);
+      }
+
+      state.status.set(found.id, { state: "saved" });
+    } catch (e) {
+      state.status.set(found.id, { state: "failed", message: e instanceof Error ? e.message : "Couldn't download it" });
+    }
+
+    render();
+  }
+}
+
 // ——— Connecting ———
 
 async function loadConnection() {
   state.connection = await connection();
+
+  if (state.connection) {
+    state.connecting = false;
+  }
+
   render();
 
   if (!state.connection) {
@@ -497,6 +605,16 @@ function setUpConnect() {
 
     ui.connectNote.hidden = false;
     ui.connectNote.textContent = "Connect in the tab that opened. This panel updates when it's done.";
+  });
+
+  ui.openConnect.addEventListener("click", () => {
+    state.connecting = true;
+    render();
+  });
+
+  ui.closeConnect.addEventListener("click", () => {
+    state.connecting = false;
+    render();
   });
 
   ui.disconnect.addEventListener("click", async () => {
@@ -545,6 +663,27 @@ function setUp() {
 
   ui.rescan.addEventListener("click", () => void scan());
   ui.send.addEventListener("click", () => void sendTicked());
+  ui.download.addEventListener("click", () => void downloadTicked());
+
+  ui.show.addEventListener("click", () => {
+    state.view = "list";
+    render();
+  });
+
+  ui.back.addEventListener("click", () => {
+    state.view = "summary";
+    render();
+  });
+
+  ui.tickAll.addEventListener("click", () => {
+    (state.scan?.found ?? []).forEach((f) => state.ticked.add(f.id));
+    render();
+  });
+
+  ui.tickNone.addEventListener("click", () => {
+    state.ticked.clear();
+    render();
+  });
   ui.sendPage.addEventListener("click", () => void sendWholePage());
 
   chrome.tabs.onActivated.addListener(() => void scan());

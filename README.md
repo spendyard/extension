@@ -1,14 +1,17 @@
 # Spendyard for Chrome
 
 A browser extension that finds the receipts and invoices on the page you're
-looking at and sends the ones you pick to Spendyard.
+looking at, and downloads the ones you pick or uploads them to Spendyard.
 
-- **The side panel** (the toolbar button) lists the PDFs it found on the
-  page: those linked from it (a billing table's "Download" links), those
-  shown in it, and the PDF open in the tab. Only PDFs: never the page itself
-  or a page it links to, even one that calls itself an invoice, and never an
-  image. The likely ones from the last 12 months are ticked (older ones are listed,
-  unticked); **Send** sends them. **Send the whole page**
+- **The side panel** (the toolbar button) first says how many receipts it
+  found on the page, the count growing as invoice pages and billing APIs
+  answer. **Show them** lists them: PDFs only (linked from the page, shown in
+  it, open in the tab, or behind a list's rows and billing API), never the
+  page itself or an image. The likely ones from the last 12 months are ticked;
+  **All** and **None** change that.
+- **Download** saves the ticked ones to the Downloads folder, named as an
+  upload would name them; it needs no connection. **Upload** sends them to
+  Spendyard, and asks to connect first when it isn't. **Send the whole page**
   sends the page itself, by hand.
 - **Right-click** a link, an image or the page: *Send to Spendyard*.
 - **Drop files** on the panel, or choose them.

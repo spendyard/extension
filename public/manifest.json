@@ -21,8 +21,13 @@
   },
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["watch.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "watch.js"
+      ],
       "run_at": "document_start",
       "all_frames": false
     }
@@ -36,7 +41,8 @@
     "scripting",
     "storage",
     "tabs",
-    "contextMenus"
+    "contextMenus",
+    "downloads"
   ],
   "host_permissions": [
     "<all_urls>"

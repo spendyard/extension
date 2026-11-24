@@ -9,46 +9,65 @@
   <body>
     <!-- No header of its own: Chrome's side panel shows the extension's name and icon above it. -->
 
-    <!-- Not connected: where to, and the button that opens the dashboard's page. -->
+    <!-- Who it uploads as, or a way to connect: scanning and downloading need neither. -->
+    <div class="who">
+      <span id="who"></span>
+      <button id="disconnect" class="quiet small" hidden>Disconnect</button>
+      <button id="open-connect" class="quiet small" hidden>Connect</button>
+    </div>
+
+    <!-- Connecting: where to, and the button that opens the dashboard's page. -->
     <section id="connect" class="connect" hidden>
-      <p>Connect the extension to send the receipts it finds to Spendyard.</p>
+      <p>Connect the extension to upload the receipts it finds to Spendyard.</p>
       <label>
         Spendyard
         <select id="server"></select>
       </label>
       <button id="connect-button" class="primary">Connect to Spendyard</button>
       <p id="connect-note" class="note" hidden></p>
+      <button id="close-connect" class="quiet">Not now</button>
     </section>
 
-    <!-- Connected. -->
-    <section id="connected" hidden>
-      <div class="who">
-        <span id="who"></span>
-        <button id="disconnect" class="quiet small">Disconnect</button>
-      </div>
+    <main id="main">
+      <ul id="sent" class="list"></ul>
 
-      <main>
-        <ul id="sent" class="list"></ul>
-
-        <div class="heading">
-          <h2>On this page</h2>
-          <button id="rescan" class="quiet small" title="Look at the page again">Look again</button>
-        </div>
+      <!-- First: how many it found on the page. -->
+      <section id="summary">
         <p id="where" class="where"></p>
-        <ul id="list" class="list"></ul>
+        <button id="show" class="count" hidden>
+          <span id="count" class="number"></span>
+          <span id="count-label" class="count-label"></span>
+          <span id="count-ticked" class="note"></span>
+          <span class="show">Show them →</span>
+        </button>
         <p id="empty" class="empty" hidden></p>
+        <p id="still" class="note centred" hidden>Still looking at invoice pages…</p>
+      </section>
 
-        <label id="drop" class="drop">
-          <input id="files" type="file" multiple accept="application/pdf,image/*,.eml,.html" hidden />
-          Drop receipts here, or <u>choose files</u>
-        </label>
-      </main>
+      <!-- Then: the list, the likely ones ticked. -->
+      <section id="found" hidden>
+        <div class="heading">
+          <button id="back" class="quiet small">← Back</button>
+          <span class="ticking">
+            <button id="tick-all" class="quiet small">All</button>
+            <button id="tick-none" class="quiet small">None</button>
+            <button id="rescan" class="quiet small" title="Look at the page again">Look again</button>
+          </span>
+        </div>
+        <ul id="list" class="list"></ul>
+      </section>
 
-      <footer>
-        <button id="send-page" class="quiet" hidden>Send the whole page</button>
-        <button id="send" class="primary" disabled>Send</button>
-      </footer>
-    </section>
+      <label id="drop" class="drop" hidden>
+        <input id="files" type="file" multiple accept="application/pdf,image/*,.eml,.html" hidden />
+        Drop receipts here, or <u>choose files</u>
+      </label>
+    </main>
+
+    <footer id="actions" hidden>
+      <button id="send-page" class="quiet" hidden>Send the whole page</button>
+      <button id="download" disabled>Download</button>
+      <button id="send" class="primary" disabled>Upload</button>
+    </footer>
 
     <script type="module" src="panel.js"></script>
   </body>
