@@ -388,10 +388,15 @@ it("remembers what was uploaded, for each Spendyard and organisation, and knows 
   const sent = receiptKeyOf(`https://pay.stripe.com/invoice/acct_1Abc/${token("acct_1Abc,_InvSep,1860000000")}/pdf?s=ap`)!;
   const later = receiptKeyOf(`https://pay.stripe.com/invoice/acct_1Abc/${token("acct_1Abc,_InvSep,1869999999")}/pdf?s=em`)!;
 
-  await remember(acme, [sent], "42");
+  await remember(acme, [sent], 42);
 
-  expect((await remembered(acme)).get(later)?.documentId).toBe("42");
+  expect((await remembered(acme)).get(later)?.documentId).toBe(42);
   expect((await remembered(other)).size).toBe(0);
+
+  // Kept as text by a version before the contract's IDs were numbers: read as a number.
+  await chrome.storage.local.set({ [`uploaded:${other.server}:${other.org.id}`]: { [sent]: { documentId: "7", at: 1 } } });
+
+  expect((await remembered(other)).get(sent)?.documentId).toBe(7);
   expect(receiptKeyOf("https://acme.example/files/invoice.pdf")).toBe("https://acme.example/files/invoice.pdf");
   expect(receiptKeyOf("blob:https://acme.example/1b2c")).toBeNull();
 });

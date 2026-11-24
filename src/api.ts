@@ -63,7 +63,8 @@ export async function whoAmI(connection: Connection): Promise<string> {
 
 /** What came of sending one file. */
 export interface Sent {
-  documentId: string;
+  /** The document it became; 0 when the server didn't say. */
+  documentId: number;
 
   /** It was there already: the same file sent before, or forwarded. */
   seen: boolean;
@@ -78,7 +79,7 @@ export async function sendDocument(connection: Connection, file: { name: string;
     {
       name: file.name,
       contentType: file.contentType,
-      size: String(file.bytes.byteLength),
+      size: file.bytes.byteLength,
     },
   );
 
@@ -93,7 +94,8 @@ export async function sendDocument(connection: Connection, file: { name: string;
     throw new ApiError("unavailable", `The upload was refused (${put.status})`);
   }
 
-  const added = await call<{ document?: { id?: string }; seen?: boolean }>(
+  // A number; as text from a server not yet on the contract's 32-bit IDs.
+  const added = await call<{ document?: { id?: number | string }; seen?: boolean }>(
     connection,
     "DocumentService",
     "AddDocument",
@@ -101,7 +103,7 @@ export async function sendDocument(connection: Connection, file: { name: string;
   );
 
   return {
-    documentId: String(added.document?.id ?? ""),
+    documentId: Number(added.document?.id ?? 0),
     seen: added.seen ?? false,
   };
 }

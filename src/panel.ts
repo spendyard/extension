@@ -16,7 +16,7 @@ import { isPendingChange, take } from "./pending";
 
 type Status =
   | { state: "sending" }
-  | { state: "sent"; documentId: string; seen: boolean }
+  | { state: "sent"; documentId: number; seen: boolean }
   | { state: "saving" }
   | { state: "saved" }
   | { state: "failed"; message: string };

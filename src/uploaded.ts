@@ -8,7 +8,7 @@
 import type { Connection } from "./connection";
 
 export interface Remembered {
-  documentId: string;
+  documentId: number;
   /** When it was uploaded, in milliseconds. */
   at: number;
 }
@@ -24,12 +24,19 @@ function storageKey(connection: Connection): string {
 export async function remembered(connection: Connection): Promise<Map<string, Remembered>> {
   const key = storageKey(connection);
   const stored = await chrome.storage.local.get(key);
+  const kept = (stored[key] as Record<string, { documentId: number | string; at: number }> | undefined) ?? {};
 
-  return new Map(Object.entries((stored[key] as Record<string, Remembered> | undefined) ?? {}));
+  // Kept before the contract's IDs were numbers: as text ("42").
+  const asRemembered = ([receipt, one]: [string, { documentId: number | string; at: number }]): [string, Remembered] => [
+    receipt,
+    { documentId: Number(one.documentId), at: one.at },
+  ];
+
+  return new Map(Object.entries(kept).map(asRemembered));
 }
 
 /** Remembers receipts as uploaded, as the document the server gave them. */
-export async function remember(connection: Connection, receipts: string[], documentId: string): Promise<void> {
+export async function remember(connection: Connection, receipts: string[], documentId: number): Promise<void> {
   if (receipts.length === 0) {
     return;
   }
