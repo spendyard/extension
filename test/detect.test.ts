@@ -162,3 +162,27 @@ it("on Miro's billing page, with no API call to be seen, reads its organisation'
     { url: "https://svc.eu01.miro.com/api/billing-and-payment/public/api/v1/organizations/1234567890/invoices", vendor: "Miro" },
   ]);
 });
+
+it("reads the dates billing pages show, and ticks the likely receipts of the last 12 months, or undated ones", async () => {
+  const { dateValue, ticksByDefault } = await import("../src/found");
+
+  const day = (d: string | null) => dateValue(d)?.toISOString().slice(0, 10) ?? null;
+
+  expect(day("2026-11-01")).toBe("2026-11-01");
+  expect(day("03.09.2026")).toBe("2026-09-03");
+  expect(day("11/03/2026")).toBe("2026-11-03");
+  expect(day("25/03/2026")).toBe("2026-03-25");
+  expect(day("Sep 14, 2026")).toBe("2026-09-14");
+  expect(day("14. okt 2026")).toBe("2026-10-14");
+  expect(day("someday")).toBeNull();
+
+  const now = new Date("2026-11-24T12:00:00Z");
+  const receipt = (date: string | null, score = 8): Found => ({ id: date ?? "none", kind: "file", url: "https://x.example/r.pdf", label: "r", context: "", amount: null, date, score });
+
+  expect(ticksByDefault(receipt("2026-11-06"), now)).toBe(true);
+  expect(ticksByDefault(receipt("2025-11-25"), now)).toBe(true);
+  expect(ticksByDefault(receipt("2025-11-23"), now)).toBe(false);
+  expect(ticksByDefault(receipt("2020-10-22"), now)).toBe(false);
+  expect(ticksByDefault(receipt(null), now)).toBe(true);
+  expect(ticksByDefault(receipt("2026-11-06", 4), now)).toBe(false);
+});

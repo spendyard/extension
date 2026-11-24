@@ -20,7 +20,7 @@ export interface Found {
   amount: string | null;
   date: string | null;
 
-  /** How sure the detection is: the panel ticks those at 5 or more. */
+  /** How sure the detection is: the panel ticks those at 5 or more from the last year (ticksByDefault). */
   score: number;
 }
 
@@ -65,4 +65,79 @@ export interface Scan {
   found: Found[];
   follow: ToFollow[];
   read: ToRead[];
+}
+
+const monthNumbers: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, mär: 3, apr: 4, may: 5, mai: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, okt: 10, nov: 11, dec: 12, des: 12, dez: 12,
+};
+
+/**
+ * A date as the scan finds it, read: 2026-11-01, 03.09.2026 (day first), 11/03/2026 (month first unless the first
+ * can't be a month), Sep 14, 2026 and 14. sep 2026. Null when it can't be read.
+ */
+export function dateValue(date: string | null): Date | null {
+  if (!date) {
+    return null;
+  }
+
+  const make = (year: number, month: number, day: number) => {
+    const full = year < 100 ? 2000 + year : year;
+    const made = new Date(Date.UTC(full, month - 1, day));
+
+    return month >= 1 && month <= 12 && day >= 1 && day <= 31 && !Number.isNaN(made.getTime()) ? made : null;
+  };
+
+  const iso = date.match(/(\d{4})-(\d{2})-(\d{2})/);
+
+  if (iso) {
+    return make(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+  }
+
+  const dotted = date.match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/);
+
+  if (dotted) {
+    return make(Number(dotted[3]), Number(dotted[2]), Number(dotted[1]));
+  }
+
+  const slashed = date.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+
+  if (slashed) {
+    const [a, b] = [Number(slashed[1]), Number(slashed[2])];
+
+    return a > 12 ? make(Number(slashed[3]), b, a) : make(Number(slashed[3]), a, b);
+  }
+
+  const named = date.toLowerCase().match(/([a-zé]{3})[a-zé]*\.? (\d{1,2}),? (\d{4})|(\d{1,2})\.? ([a-zé]{3})[a-zé]*\.? (\d{4})/);
+
+  if (named) {
+    const month = monthNumbers[named[1] ?? named[5] ?? ""];
+    const day = Number(named[2] ?? named[4]);
+    const year = Number(named[3] ?? named[6]);
+
+    return month ? make(year, month, day) : null;
+  }
+
+  return null;
+}
+
+/** How far back the panel ticks: a first send from a long history is the last year, not everything since 2020. */
+export const tickedMonths = 12;
+
+/** The panel's bar for ticking a receipt: likely (detect.ts's score 5 or more), and dated in the last year or not dated. */
+export function ticksByDefault(found: Found, now = new Date()): boolean {
+  if (found.score < 5) {
+    return false;
+  }
+
+  const date = dateValue(found.date);
+
+  if (!date) {
+    return true;
+  }
+
+  const since = new Date(now);
+
+  since.setUTCMonth(since.getUTCMonth() - tickedMonths);
+
+  return date >= since;
 }

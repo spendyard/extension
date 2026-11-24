@@ -7,7 +7,8 @@ looking at and sends the ones you pick to Spendyard.
   page: those linked from it (a billing table's "Download" links), those
   shown in it, and the PDF open in the tab. Only PDFs: never the page itself
   or a page it links to, even one that calls itself an invoice, and never an
-  image. The likely ones are ticked; **Send** sends them. **Send the whole page**
+  image. The likely ones from the last 12 months are ticked (older ones are listed,
+  unticked); **Send** sends them. **Send the whole page**
   sends the page itself, by hand.
 - **Right-click** a link, an image or the page: *Send to Spendyard*.
 - **Drop files** on the panel, or choose them.

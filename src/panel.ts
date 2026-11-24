@@ -7,11 +7,8 @@ import { connection, connectUrl, forget, isConnectionChange, servers, type Conne
 import { get, type Got } from "./fetch";
 import { follow, mostFollowed } from "./follow";
 import { stripeInvoices } from "./stripe";
-import type { Found, Scan } from "./found";
+import { ticksByDefault, type Found, type Scan } from "./found";
 import { isPendingChange, take } from "./pending";
-
-/** Ticked to begin with: the likely ones (detect.ts's score). */
-const tickedFrom = 5;
 
 type Status =
   | { state: "sending" }
@@ -249,7 +246,7 @@ async function scan() {
     const before = new Set(state.scan?.found.map((f) => f.id) ?? []);
 
     for (const found of merged.found) {
-      if (!before.has(found.id) && found.score >= tickedFrom) {
+      if (!before.has(found.id) && ticksByDefault(found)) {
         state.ticked.add(found.id);
       }
     }
@@ -322,7 +319,7 @@ async function readAll(tabId: number, scanned: Scan) {
       const own = state.scan.found.filter((f) => !fromElsewhere.has(f.id));
 
       state.scan = withFollowed({ ...state.scan, found: own });
-      invoices.filter((f) => f.score >= tickedFrom).forEach((f) => state.ticked.add(f.id));
+      invoices.filter((f) => ticksByDefault(f)).forEach((f) => state.ticked.add(f.id));
     }
 
     render();
@@ -356,7 +353,10 @@ async function followAll(scanned: Scan) {
       const own = state.scan.found.filter((f) => !fromElsewhere.has(f.id));
 
       state.scan = withFollowed({ ...state.scan, found: own });
-      state.ticked.add(pdf.id);
+
+      if (ticksByDefault(pdf)) {
+        state.ticked.add(pdf.id);
+      }
     }
 
     render();
