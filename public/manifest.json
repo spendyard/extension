@@ -19,6 +19,14 @@
   "side_panel": {
     "default_path": "panel.html"
   },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["watch.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"

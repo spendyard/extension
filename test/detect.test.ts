@@ -11,9 +11,11 @@ const detect = await Bun.build({ entrypoints: [`${import.meta.dir}/../src/detect
 const code = await detect.outputs[0]!.text();
 
 /** The page, scanned as the panel does it. */
-async function scan(name: string, url = `https://acme.example/${name}`): Promise<{ scan: Scan; snapshot: string }> {
+async function scan(name: string, url = `https://acme.example/${name}`, calls: string[] = []): Promise<{ scan: Scan; snapshot: string }> {
   const window = new Window({ url });
 
+  // What watch.ts would have seen the page call.
+  Object.assign(window, { spendyardCalls: calls });
   window.document.write(readFileSync(`${import.meta.dir}/pages/${name}`, "utf8"));
   window.eval(code);
 
@@ -185,4 +187,48 @@ it("reads the dates billing pages show, and ticks the likely receipts of the las
   expect(ticksByDefault(receipt("2020-10-22"), now)).toBe(false);
   expect(ticksByDefault(receipt(null), now)).toBe(true);
   expect(ticksByDefault(receipt("2026-11-06", 4), now)).toBe(false);
+});
+
+// ——— With no rule: what general.ts does on a site never tried ———
+
+it("with no rule, opens the invoice pages a list's rows link to, and names them by the site", async () => {
+  const { follow } = (await scan("vercel-invoices.html", "https://app.newsaas.example/account/settings/invoices")).scan;
+
+  expect(follow.map((f) => [f.label, f.amount, f.date, new URL(f.url).pathname.slice(0, 26)])).toEqual([
+    ["Newsaas invoice", "$25.00", "Sep 14, 2026", "/account/invoices/inv_c3Ry"],
+    ["Newsaas invoice", "$25.00", "Aug 14, 2026", "/account/invoices/inv_c3Ry"],
+  ]);
+});
+
+it("with no rule, opens a row's invoice page, but not the menu's Invoices, another site's page or a PDF", async () => {
+  const { follow } = (await scan("billing.html")).scan;
+
+  expect(follow.map((f) => new URL(f.url).pathname)).toEqual(["/billing/invoice/in_123"]);
+  expect((await scan("shop.html")).scan.follow).toEqual([]);
+});
+
+it("takes the likeliest PDF from an invoice's page: Stripe's, then one named so, from its links or its data", async () => {
+  const { pdfIn } = await import("../src/follow");
+  const { anyPdf } = await import("../src/general");
+
+  const vercel = readFileSync(`${import.meta.dir}/pages/vercel-invoice.html`, "utf8");
+
+  expect(pdfIn(vercel, "https://vercel.com/", anyPdf)).toBe("https://pay.stripe.com/invoice/acct_1Abc/test_YWNjdF8xQWJjLF9UZXN0/pdf?s=ap&r=1");
+  expect(pdfIn('<a href="/terms.pdf">Terms</a> <a href="/files/invoice-12.pdf">Download</a>', "https://acme.example/", anyPdf)).toBe(
+    "https://acme.example/files/invoice-12.pdf",
+  );
+  expect(pdfIn('<script>{"pdf":"https:\\/\\/pay.stripe.com\\/invoice\\/acct_1\\/test_A\\/pdf?s=ap"}</script>', "https://x.example/", anyPdf)).toBe(
+    "https://pay.stripe.com/invoice/acct_1/test_A/pdf?s=ap",
+  );
+});
+
+it("with no rule, reads the page's call to its own billing API's list, and no other call", async () => {
+  const calls = [
+    "https://svc.eu01.boards.example/api/v1/organizations/1/invoices",
+    "https://svc.eu01.boards.example/api/v1/organizations/1/subscription/downgrade",
+    "https://tracker.elsewhere.example/v1/invoices",
+  ];
+  const { read } = (await scan("miro-billing.html", "https://boards.example/app/settings/company/1/billing/", calls)).scan;
+
+  expect(read).toEqual([{ url: "https://svc.eu01.boards.example/api/v1/organizations/1/invoices", vendor: "Boards" }]);
 });

@@ -288,12 +288,15 @@ async function readAll(tabId: number, scanned: Scan) {
       .executeScript({
         target: { tabId },
         args: [api.url],
-        // Miro's answers 415 to a GET that doesn't say it's JSON.
+        // Asking for JSON; Miro's answers 415 to a GET that doesn't say it is JSON, so then once more saying so.
         func: async (url: string) => {
-          const response = await fetch(url, {
-            credentials: "include",
-            headers: { Accept: "application/json", "Content-Type": "application/json" },
-          });
+          const get = (headers: Record<string, string>) => fetch(url, { credentials: "include", headers });
+
+          let response = await get({ Accept: "application/json" });
+
+          if (response.status === 415) {
+            response = await get({ Accept: "application/json", "Content-Type": "application/json" });
+          }
 
           return response.ok ? await response.text() : null;
         },

@@ -11,10 +11,10 @@ const out = "dist";
 
 async function build() {
   const built = await Bun.build({
-    entrypoints: ["src/background.ts", "src/panel.ts", "src/detect.ts"],
+    entrypoints: ["src/background.ts", "src/panel.ts", "src/detect.ts", "src/watch.ts"],
     outdir: out,
     target: "browser",
-    // detect.js runs in pages as a plain script: no imports left in any of them.
+    // detect.js and watch.js run in pages as plain scripts: no imports left in any of them.
     format: "esm",
     splitting: false,
     minify: false,

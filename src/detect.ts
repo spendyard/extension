@@ -10,6 +10,7 @@
 // the panel shows everything above a low bar and ticks the likely ones.
 
 import { looksLikeId, type Found, type Scan, type ToFollow, type ToRead } from "./found";
+import { anyPdf, billingApi, invoicePage, siteOf, stripeInvoicePage, vendorOf } from "./general";
 import { matches, ruleFor, type SiteRule } from "./sites";
 
 /** "Receipt" and "invoice" in the languages Spendyard's customers write in. */
@@ -308,49 +309,76 @@ function receiptFirst(links: Linked[]) {
   }
 }
 
-/** The rows of a billing list that link to their invoice's own page, for a rule that says to open them. */
+/**
+ * The rows of a billing list that link to their invoice's own page, the PDF only there: as a rule says, or else any
+ * row with an amount and a date linking to the site's own page for one invoice or receipt, or to Stripe's.
+ */
 function toFollow(rule: SiteRule | null): ToFollow[] {
   const follow = rule?.follow;
-
-  if (!rule || !follow) {
-    return [];
-  }
-
+  const vendor = rule?.name ?? vendorOf(location.host);
   const pages = new Map<string, ToFollow>();
 
   for (const link of document.querySelectorAll<HTMLAnchorElement>("a[href]")) {
     const url = absolute(link.getAttribute("href") ?? "");
 
-    if (!url || url.host !== location.host || !matches(follow.pages, url.pathname) || pages.has(url.href)) {
+    if (!url || pages.has(url.href) || linksToPdf(link, url)) {
       continue;
     }
 
     const context = squeeze(contextOf(link));
+    const amount = amountIn(context);
+    const date = dateIn(context);
 
-    pages.set(url.href, {
-      url: url.href,
-      pdf: follow.pdf,
-      label: `${rule.name} invoice`,
-      amount: amountIn(context),
-      date: dateIn(context),
-    });
+    const byRule = follow && url.host === location.host && matches(follow.pages, url.pathname);
+    const stripe = stripeInvoicePage.test(url.href);
+    const ownPage =
+      url.host === location.host && url.pathname !== location.pathname && invoicePage.test(url.pathname) && !link.closest("nav, header, footer");
+
+    // Without a rule, only a row of a list: a link that says Invoices, with no amount and date, is the menu.
+    const general = !follow && (stripe || ownPage) && amount !== null && date !== null;
+
+    if (!byRule && !general) {
+      continue;
+    }
+
+    pages.set(url.href, { url: url.href, pdf: follow?.pdf ?? anyPdf, label: `${vendor} invoice`, amount, date });
   }
 
   return [...pages.values()];
 }
 
-/** The billing API a rule says to read: the call the page made, or the rule's URL filled in from the page's path. */
+/**
+ * The calls the page made: the browser's own list, which holds 250 and on a busy app is full before the billing call
+ * is made, and what watch.ts saw from the page's start.
+ */
+function callsMade(): string[] {
+  const timed = performance.getEntriesByType("resource").map((entry) => entry.name);
+  const watched = (globalThis as { spendyardCalls?: string[] }).spendyardCalls ?? [];
+
+  return [...new Set([...watched, ...timed])];
+}
+
+/**
+ * The billing API to read: as a rule says (the call the page made, or the rule's URL filled in from the page's path),
+ * or else any call the page made on its own site whose path ends invoices or receipts.
+ */
 function toRead(rule: SiteRule | null): ToRead[] {
   const api = rule?.api;
 
   if (!rule || !api) {
-    return [];
+    const site = siteOf(location.host);
+    const vendor = rule?.name ?? vendorOf(location.host);
+
+    return callsMade()
+      .filter((call) => {
+        const url = absolute(call);
+
+        return url !== null && siteOf(url.host) === site && billingApi.test(url.pathname);
+      })
+      .map((url) => ({ url, vendor }));
   }
 
-  const made = performance
-    .getEntriesByType("resource")
-    .map((entry) => entry.name)
-    .find((name) => new RegExp(api.seen).test(name.split(/[?#]/)[0]!));
+  const made = callsMade().find((name) => new RegExp(api.seen).test(name.split(/[?#]/)[0]!));
 
   if (made) {
     return [{ url: made, vendor: rule.name }];
