@@ -10,7 +10,7 @@ import { get, type Got } from "./fetch";
 import { bytesOf, pdfDownload, type Downloaded } from "./downloads";
 import { follow, mostFollowed } from "./follow";
 import { stripeInvoices } from "./stripe";
-import { likely, once, receiptKey, ticksByDefault, type Found, type Scan } from "./found";
+import { likely, olderThanTicked, once, receiptKey, ticksByDefault, type Found, type Scan } from "./found";
 import { isPendingChange, take } from "./pending";
 
 type Status =
@@ -43,7 +43,15 @@ const state = {
   connecting: false,
   /** PDFs downloaded by hand while the panel is open, the newest first (downloads.ts). */
   downloaded: [] as Downloaded[],
+  /** The page's Load more pressed by the panel itself, on this page. */
+  loadPresses: 0,
 };
+
+/**
+ * The most the panel presses a list's Load more by itself: enough for a year of monthly invoices from a list that
+ * shows a few at a time. Older ones are a Load more press of the person's away.
+ */
+const mostLoadPresses = 10;
 
 /** Each invoice page opened, by its URL: its PDF, or null when it had none. Kept while the panel is open. */
 const followed = new Map<string, Found | null>();
@@ -78,6 +86,7 @@ const ui = {
   tickNone: element<HTMLButtonElement>("tick-none"),
   actions: element<HTMLElement>("actions"),
   download: element<HTMLButtonElement>("download"),
+  loadMore: element<HTMLButtonElement>("load-more"),
   downloads: element<HTMLElement>("downloads"),
   downloadedList: element<HTMLUListElement>("downloaded"),
   sent: element<HTMLUListElement>("sent"),
@@ -362,6 +371,7 @@ function render() {
   ui.empty.textContent = state.scanError ?? (looking ? "Looking for receipts…" : "No receipts found on this page.");
 
   ui.list.replaceChildren(...found.map(foundItem));
+  ui.loadMore.hidden = !state.scan?.loadMore;
   ui.drop.hidden = !connected;
 
   tellBadge();
@@ -419,6 +429,7 @@ async function scanOnce() {
     state.scan = null;
     state.ticked.clear();
     state.view = "summary";
+    state.loadPresses = 0;
   }
 
   render();
@@ -450,12 +461,41 @@ async function scanOnce() {
     state.scan = merged;
     void followAll(scanned);
     void readAll(tab.id, scanned);
+    void loadMoreUntilAYear(tab.id, merged);
   } catch {
     state.scan = null;
     state.scanError = "Chrome doesn't let extensions look at this page.";
   }
 
   render();
+}
+
+/** Presses the page's Load more, as the person would; the page changing then has the panel look again. */
+async function pressLoadMore(tabId: number): Promise<boolean> {
+  const [result] = await chrome.scripting
+    .executeScript({
+      target: { tabId },
+      func: () => (globalThis as unknown as { spendyardLoadMore: () => boolean }).spendyardLoadMore(),
+    })
+    .catch(() => [undefined]);
+
+  return result?.result === true;
+}
+
+/**
+ * Presses a list's Load more until it reaches back past the months the panel ticks, so the year that's ticked is all
+ * there; at most mostLoadPresses times, and never once the list is older than that.
+ */
+async function loadMoreUntilAYear(tabId: number, scanned: Scan) {
+  const dates = [...scanned.found.map((f) => f.date), ...scanned.follow.map((f) => f.date)];
+  const farEnough = dates.some((date) => olderThanTicked(date));
+
+  if (!scanned.loadMore || farEnough || state.loadPresses >= mostLoadPresses) {
+    return;
+  }
+
+  state.loadPresses += 1;
+  await pressLoadMore(tabId);
 }
 
 /** The scan with the PDFs already taken from its invoice pages and billing APIs. */
@@ -803,6 +843,13 @@ function setUp() {
   ui.rescan.addEventListener("click", () => void scan());
   ui.send.addEventListener("click", () => void sendTicked());
   ui.download.addEventListener("click", () => void downloadTicked());
+
+  // Older than the panel goes by itself: the person's press, as many as they like.
+  ui.loadMore.addEventListener("click", () => {
+    if (state.tabId !== null) {
+      void pressLoadMore(state.tabId);
+    }
+  });
 
   ui.show.addEventListener("click", () => {
     state.view = "list";

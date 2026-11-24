@@ -388,6 +388,37 @@ function toRead(rule: SiteRule | null): ToRead[] {
   return url ? [{ url, vendor: rule.name }] : [];
 }
 
+/** What a list's button for its older rows says: Load more, Show more, Vis flere and the like. */
+const loadMoreWords =
+  /^(?:(?:load|show|see|view) (?:more|older)(?: (?:invoices|receipts|payments|bills|history|results))?|older(?: invoices| payments)?|vis (?:flere|mer)|last inn (?:flere|mer)|hent (?:flere|mer)|mehr (?:anzeigen|laden)|afficher plus)\s*[.…]*$/i;
+
+/** The list's Load more button, if it shows one that can be pressed. */
+function loadMoreButton(): HTMLElement | null {
+  const candidates = document.querySelectorAll<HTMLElement>("button, [role=button], a[href='#'], a:not([href])");
+
+  for (const candidate of candidates) {
+    const said = (candidate.textContent ?? "").replace(/\s+/g, " ").trim();
+    const style = getComputedStyle(candidate);
+    const shown = !candidate.closest("[hidden]") && style.display !== "none" && style.visibility !== "hidden";
+    const pressable = !(candidate as HTMLButtonElement).disabled && candidate.getAttribute("aria-disabled") !== "true";
+
+    if (loadMoreWords.test(said) && shown && pressable && !candidate.closest("nav, header, footer")) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+/** Presses the list's Load more button, as the person would: true when there was one. */
+export function pressLoadMore(): boolean {
+  const button = loadMoreButton();
+
+  button?.click();
+
+  return button !== null;
+}
+
 export function scan(): Scan {
   const found = new Map<string, Found>();
   const rule = ruleFor(new URL(location.href));
@@ -434,7 +465,11 @@ export function scan(): Scan {
 
   const read = file ? [] : toRead(rule);
 
-  return { url: location.href, title: document.title, found: ranked, follow, read };
+  // Only a list of receipts: a Show more on any other page is none of the scan's business.
+  const isList = ranked.length > 0 || follow.length > 0 || read.length > 0;
+  const loadMore = !file && isList && loadMoreButton() !== null;
+
+  return { url: location.href, title: document.title, found: ranked, follow, read, loadMore };
 }
 
 /** The page as it is now, as one HTML file for the reader, when it's sent by hand: no scripts, and links that still lead where they did. */

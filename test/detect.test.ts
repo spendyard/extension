@@ -290,3 +290,39 @@ it("offers a PDF downloaded by hand, not one of its own, and says where it came 
   expect(pdfDownload(item({ state: "in_progress" }), "own")).toBeNull();
   expect(pdfDownload(item({ filename: "/Users/me/Downloads/photo.png", mime: "image/png" }), "own")).toBeNull();
 });
+
+// ——— Load more ———
+
+it("sees a list's Load more, and presses it as the person would", async () => {
+  const { scan: scanned } = await scan("vercel-invoices.html", "https://app.newsaas.example/account/settings/invoices");
+
+  expect(scanned.loadMore).toBe(true);
+
+  const window = new Window({ url: "https://app.newsaas.example/account/settings/invoices" });
+  const built = await Bun.build({ entrypoints: [`${import.meta.dir}/../src/detect.ts`], target: "browser" });
+
+  window.document.write(readFileSync(`${import.meta.dir}/pages/vercel-invoices.html`, "utf8"));
+
+  let pressed = 0;
+
+  [...window.document.querySelectorAll("button")].find((b) => b.textContent === "Load More")!.addEventListener("click", () => pressed++);
+  window.eval(await built.outputs[0]!.text());
+
+  expect((window as unknown as { spendyardLoadMore: () => boolean }).spendyardLoadMore()).toBe(true);
+  expect(pressed).toBe(1);
+
+  await window.happyDOM.close();
+});
+
+it("leaves a Show more alone on a page with no receipts", async () => {
+  expect((await scan("shop.html")).scan.loadMore).toBe(false);
+});
+
+it("knows when a list reaches back further than the months it ticks", async () => {
+  const { olderThanTicked } = await import("../src/found");
+  const now = new Date("2026-11-24T12:00:00Z");
+
+  expect(olderThanTicked("Oct 14, 2025", now)).toBe(true);
+  expect(olderThanTicked("Dec 14, 2025", now)).toBe(false);
+  expect(olderThanTicked(null, now)).toBe(false);
+});

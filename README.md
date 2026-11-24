@@ -14,6 +14,10 @@ looking at, and downloads the ones you pick or uploads them to Spendyard.
   it, open in the tab, or behind a list's rows and billing API), never the
   page itself or an image. The likely ones from the last 12 months are ticked;
   **All** and **None** change that.
+- **Load more**: a list that shows a few at a time has its Load more (Show
+  more, Vis flere…) pressed by the panel, as you would, until it reaches back
+  past 12 months, ten presses at most; **Load more** in the list goes further.
+  Only while the panel is open, and only on a page with receipts.
 - **Download** saves the ticked ones to the Downloads folder, named as an
   upload would name them; it needs no connection. **Upload** sends them to
   Spendyard, and asks to connect first when it isn't. **Send the whole page**

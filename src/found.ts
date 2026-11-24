@@ -65,6 +65,9 @@ export interface Scan {
   found: Found[];
   follow: ToFollow[];
   read: ToRead[];
+
+  /** The list has a Load more button for older ones: the panel presses it (scan.ts's pressLoadMore). */
+  loadMore: boolean;
 }
 
 const monthNumbers: Record<string, number> = {
@@ -164,6 +167,21 @@ export function likely(found: Found): boolean {
 
 /** How far back the panel ticks: a first send from a long history is the last year, not everything since 2020. */
 export const tickedMonths = 12;
+
+/** Whether a date is older than the months the panel ticks: the list goes back far enough. */
+export function olderThanTicked(date: string | null, now = new Date()): boolean {
+  const value = dateValue(date);
+
+  if (!value) {
+    return false;
+  }
+
+  const since = new Date(now);
+
+  since.setUTCMonth(since.getUTCMonth() - tickedMonths);
+
+  return value < since;
+}
 
 /** The panel's bar for ticking a receipt: likely (detect.ts's score 5 or more), and dated in the last year or not dated. */
 export function ticksByDefault(found: Found, now = new Date()): boolean {
