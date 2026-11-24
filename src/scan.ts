@@ -8,7 +8,7 @@
 // the panel shows everything above a low bar and ticks the likely ones.
 
 import { looksLikeId, receiptKey, type Found, type Scan, type ToFollow, type ToRead } from "./found";
-import { anyPdf, billingApi, invoicePage, siteOf, stripeInvoicePage, vendorOf } from "./general";
+import { anyPdf, billingApi, invoicePage, isPageRender, siteOf, stripeInvoicePage, vendorOf } from "./general";
 import { matches, ruleFor, type SiteRule } from "./sites";
 
 /** "Receipt" and "invoice" in the languages Spendyard's customers write in. */
@@ -371,7 +371,7 @@ function toRead(rule: SiteRule | null): ToRead[] {
       .filter((call) => {
         const url = absolute(call);
 
-        return url !== null && siteOf(url.host) === site && billingApi.test(url.pathname);
+        return url !== null && siteOf(url.host) === site && billingApi.test(url.pathname) && !isPageRender(url);
       })
       .map((url) => ({ url, vendor }));
   }

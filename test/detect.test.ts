@@ -326,3 +326,29 @@ it("knows when a list reaches back further than the months it ticks", async () =
   expect(olderThanTicked("Dec 14, 2025", now)).toBe(false);
   expect(olderThanTicked(null, now)).toBe(false);
 });
+
+it("knows a Stripe invoice by its account and invoice, though its token is made anew with another time", async () => {
+  const { once, stripeInvoiceOf } = await import("../src/found");
+
+  const token = (text: string) => `live_${btoa(text).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`;
+  const url = (text: string) => `https://pay.stripe.com/invoice/acct_1Abc/${token(text)}/pdf?s=ap`;
+  const pdf = (id: string, address: string): Found => ({ id, kind: "file", url: address, label: id, context: "", amount: null, date: null, score: 8 });
+
+  const september = url("acct_1Abc,_InvSeptember,1860000000\u0001sig1");
+  const septemberAgain = url("acct_1Abc,_InvSeptember,1860000999\u0002sig2");
+  const august = url("acct_1Abc,_InvAugust,1860000000\u0001sig1");
+
+  expect(stripeInvoiceOf(new URL(september))).toBe("acct_1Abc,_InvSeptember");
+  expect(once([pdf("page", september), pdf("api", septemberAgain), pdf("aug", august)]).map((f) => f.id)).toEqual(["page", "aug"]);
+});
+
+it("doesn't read a page's own render (Next.js's ?_rsc, made again on each Load more) as a billing API", async () => {
+  const calls = [
+    "https://vercel.example/account/settings/invoices?_rsc=1a2b",
+    "https://vercel.example/account/settings/invoices?_rsc=3c4d",
+    "https://api.vercel.example/v1/billing/invoices",
+  ];
+  const { read } = (await scan("vercel-invoices.html", "https://vercel.example/account/settings/invoices", calls)).scan;
+
+  expect(read.map((r) => r.url)).toEqual(["https://api.vercel.example/v1/billing/invoices"]);
+});

@@ -124,15 +124,37 @@ export function dateValue(date: string | null): Date | null {
 }
 
 /**
- * Which receipt it is, whichever way it was found: Stripe's PDF by its address without its query (the same invoice
- * comes with another ?s= from a page and from its billing API, as Vercel's do), anything else by its id.
+ * A Stripe-hosted invoice by what doesn't change: its address's token (pay.stripe.com/invoice/acct_…/live_…/pdf) is
+ * made anew each time, a time and a signature in it, but starts with the account and the invoice: "acct_1…,_VG0…".
+ */
+export function stripeInvoiceOf(url: URL): string | null {
+  const [, kind, account, token] = url.pathname.split("/");
+
+  if (url.hostname !== "pay.stripe.com" || kind !== "invoice" || !account || !token) {
+    return null;
+  }
+
+  try {
+    const base64 = token.replace(/^(?:live|test)_/, "").replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const [owner, invoice] = atob(padded).split(",");
+
+    return owner?.startsWith("acct_") && invoice ? `${owner},${invoice}` : `${account},${token}`;
+  } catch {
+    return `${account},${token}`;
+  }
+}
+
+/**
+ * Which receipt it is, whichever way it was found: a Stripe-hosted invoice by its account and invoice (the same one
+ * comes with another token from its page and from the billing API, as Vercel's do), anything else by its id.
  */
 export function receiptKey(found: Found): string {
   try {
-    const url = new URL(found.url);
+    const stripe = stripeInvoiceOf(new URL(found.url));
 
-    if (url.hostname === "pay.stripe.com") {
-      return `${url.origin}${url.pathname}`;
+    if (stripe) {
+      return `stripe:${stripe}`;
     }
   } catch {
     // Not an address: its id.

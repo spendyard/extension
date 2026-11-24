@@ -26,6 +26,14 @@ export const invoicePage = /\/(?:invoices?|receipts?|bills?|billing|kvitteringer
 /** A billing API's list, by its path: ending invoices or receipts, or a billing or payment history. */
 export const billingApi = /\/(?:invoices|receipts|billing[-_]?history|payment[-_]?history)\/?$/i;
 
+/**
+ * A request for the page itself, rendered as data: Next.js's ?_rsc (Vercel's list), Remix's ?_data, SvelteKit's
+ * __data.json. Never a billing API: the page has what it has, and each Load more makes another.
+ */
+export function isPageRender(url: URL): boolean {
+  return url.searchParams.has("_rsc") || url.searchParams.has("_data") || /\/__data\.json$|\.rsc$/.test(url.pathname);
+}
+
 /** The site a host belongs to, roughly: its last two labels (svc.eu01.miro.com → miro.com). */
 export function siteOf(host: string): string {
   return host.toLowerCase().split(".").slice(-2).join(".");
