@@ -294,7 +294,32 @@ async function activeTab(): Promise<chrome.tabs.Tab | undefined> {
   return tab;
 }
 
+/** A scan under way, and whether another was asked for meanwhile: one after it, not two at once. */
+let scanning = false;
+let scanAgain = false;
+
 async function scan() {
+  if (scanning) {
+    scanAgain = true;
+
+    return;
+  }
+
+  scanning = true;
+
+  try {
+    await scanOnce();
+  } finally {
+    scanning = false;
+  }
+
+  if (scanAgain) {
+    scanAgain = false;
+    await scan();
+  }
+}
+
+async function scanOnce() {
   const tab = await activeTab();
 
   if (!tab?.id) {
@@ -716,6 +741,16 @@ function setUp() {
   ui.sendPage.addEventListener("click", () => void sendWholePage());
 
   chrome.tabs.onActivated.addListener(() => void scan());
+
+  // The page changed under the panel: a billing list drawn after the page loaded (Vercel's, Miro's), or another
+  // page of an app that never reloads. Its count (watch.ts) says so, as it does to the badge: look again.
+  chrome.runtime.onMessage.addListener((message: { type?: string }, sender) => {
+    if (message?.type === "spendyard.count" && sender.tab?.id !== undefined && sender.tab.id === state.tabId) {
+      void scan();
+    }
+
+    return false;
+  });
 
   chrome.tabs.onUpdated.addListener((tabId, change) => {
     if (tabId === state.tabId && change.status === "complete") {
