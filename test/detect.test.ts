@@ -352,3 +352,12 @@ it("doesn't read a page's own render (Next.js's ?_rsc, made again on each Load m
 
   expect(read.map((r) => r.url)).toEqual(["https://api.vercel.example/v1/billing/invoices"]);
 });
+
+it("doesn't open a row's page when the row has its PDF already, nor count it twice on the badge (GitHub's View receipt)", async () => {
+  const { follow } = (await scan("payments.html", "https://github.com/organizations/acme/billing/history")).scan;
+
+  expect(follow).toEqual([]);
+  expect(await counted("payments.html", "https://github.com/organizations/acme/billing/history")).toEqual([
+    { type: "spendyard.count", url: "https://github.com/organizations/acme/billing/history", found: 2, more: false },
+  ]);
+});

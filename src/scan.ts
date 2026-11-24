@@ -316,6 +316,18 @@ function toFollow(rule: SiteRule | null): ToFollow[] {
   const vendor = rule?.name ?? vendorOf(location.host);
   const pages = new Map<string, ToFollow>();
 
+  // A row that has its PDF already (GitHub's: the receipt as a PDF beside View receipt) needs no page opened for it.
+  const rowsWithPdf = new Set<Element>();
+
+  for (const link of document.querySelectorAll<HTMLAnchorElement>("a[href]")) {
+    const url = absolute(link.getAttribute("href") ?? "");
+    const row = link.closest("tr, li, [role=row]");
+
+    if (url && row && linksToPdf(link, url)) {
+      rowsWithPdf.add(row);
+    }
+  }
+
   for (const link of document.querySelectorAll<HTMLAnchorElement>("a[href]")) {
     const url = absolute(link.getAttribute("href") ?? "");
 
@@ -332,8 +344,11 @@ function toFollow(rule: SiteRule | null): ToFollow[] {
     const ownPage =
       url.host === location.host && url.pathname !== location.pathname && invoicePage.test(url.pathname) && !link.closest("nav, header, footer");
 
-    // Without a rule, only a row of a list: a link that says Invoices, with no amount and date, is the menu.
-    const general = !follow && (stripe || ownPage) && amount !== null && date !== null;
+    // Without a rule, only a row of a list without its PDF: a link that says Invoices, with no amount and date, is
+    // the menu.
+    const row = link.closest("tr, li, [role=row]");
+    const hasPdf = row !== null && rowsWithPdf.has(row);
+    const general = !follow && (stripe || ownPage) && amount !== null && date !== null && !hasPdf;
 
     if (!byRule && !general) {
       continue;
