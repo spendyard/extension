@@ -9,7 +9,7 @@ import { connection, connectUrl, forget, isConnectionChange, servers, type Conne
 import { get, type Got } from "./fetch";
 import { follow, mostFollowed } from "./follow";
 import { stripeInvoices } from "./stripe";
-import { ticksByDefault, type Found, type Scan } from "./found";
+import { likely, ticksByDefault, type Found, type Scan } from "./found";
 import { isPendingChange, take } from "./pending";
 
 type Status =
@@ -217,6 +217,24 @@ function renderFooter() {
   ui.sendPage.hidden = !state.connection || !state.scan || state.scanError !== null;
 }
 
+/** What the badge was last told, so it isn't told again on every render. */
+let toldBadge = "";
+
+/** The toolbar's badge, in step with what the panel found: the invoice pages and billing APIs included. */
+function tellBadge() {
+  if (state.tabId === null || !state.scan) {
+    return;
+  }
+
+  const message = { type: "spendyard.panel-count", tabId: state.tabId, url: state.scan.url, found: state.scan.found.filter(likely).length };
+  const now = JSON.stringify(message);
+
+  if (now !== toldBadge) {
+    toldBadge = now;
+    void chrome.runtime.sendMessage(message).catch(() => undefined);
+  }
+}
+
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
@@ -242,10 +260,19 @@ function render() {
   ui.found.hidden = state.view !== "list";
 
   ui.where.textContent = where;
+  // The count is of the likely ones, as the badge's; the list has the others too.
+  const receipts = found.filter(likely).length;
+  const others = found.length - receipts;
+
   ui.show.hidden = found.length === 0;
-  ui.count.textContent = String(found.length);
-  ui.countLabel.textContent = `${found.length === 1 ? "receipt" : "receipts"} found on this page`;
-  ui.countTicked.textContent = found.length > 0 ? `${plural(state.ticked.size, "ticked", "ticked")}: the likely ones of the last 12 months` : "";
+  ui.count.textContent = String(receipts);
+  ui.countLabel.textContent = `${receipts === 1 ? "receipt" : "receipts"} found on this page`;
+  ui.countTicked.textContent = [
+    `${state.ticked.size} ticked, from the last 12 months`,
+    others > 0 ? `and ${plural(others, "other PDF", "other PDFs")}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
   ui.still.hidden = !(state.scan && state.following > 0);
 
   ui.empty.hidden = found.length > 0 && !state.scanError;
@@ -253,6 +280,8 @@ function render() {
 
   ui.list.replaceChildren(...found.map(foundItem));
   ui.drop.hidden = !connected;
+
+  tellBadge();
 
   renderFooter();
 }

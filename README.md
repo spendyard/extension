@@ -3,6 +3,11 @@
 A browser extension that finds the receipts and invoices on the page you're
 looking at, and downloads the ones you pick or uploads them to Spendyard.
 
+- **The badge** on the toolbar button says how many receipts the page has,
+  before the panel is opened: counted in the page as it loads and changes
+  (`src/watch.ts`, only on a page that looks like billing or links to a PDF
+  or to Stripe), the panel's own count once it has looked further; `•` when
+  the receipts are behind a billing API that only the panel reads.
 - **The side panel** (the toolbar button) first says how many receipts it
   found on the page, the count growing as invoice pages and billing APIs
   answer. **Show them** lists them: PDFs only (linked from the page, shown in
@@ -56,7 +61,8 @@ A rule only adds to what the scan finds; on a site it doesn't know, or one
 that has changed, the general scan still runs.
 
 Detection reads only the page, in the extension's own isolated world
-(`src/detect.ts`), and only when the panel is open; and where a rule says so,
+(`src/scan.ts`): to count for the badge as a billing page loads, and in full
+when the panel is open; and where a rule says so,
 the invoice pages it links to or the billing API it draws its list from. Linked files are fetched as
 you, so a billing page's invoices come with your sign-in to that site. Nothing
 leaves the browser except what you send.
@@ -106,13 +112,14 @@ bun test        # detection on the pages in test/pages
 | --- | --- |
 | `public/manifest.json` | Manifest V3: side panel, context menu, `<all_urls>` to read pages and fetch their files, `watch.js` in every page |
 | `src/background.ts` | The service worker: the button, the right-click menu, taking the token |
-| `src/detect.ts` | Run in the page: which PDFs are receipts, and a snapshot of the page |
+| `src/scan.ts` | Reading a page: which PDFs are receipts, invoice pages and billing APIs to look at |
+| `src/detect.ts` | Run in the page when the panel scans, and a snapshot of the page |
 | `src/panel.ts` | The side panel |
 | `src/sites.ts` | The rules for particular billing pages |
 | `src/follow.ts` | Opening an invoice's own page for its PDF |
 | `src/stripe.ts` | Stripe's invoices in a billing API's answer |
 | `src/general.ts` | What the scan does on a site with no rule |
-| `src/watch.ts` | From each page's start: its calls to a billing API |
+| `src/watch.ts` | From each page's start: the badge's count, and its calls to a billing API |
 | `src/fetch.ts` | A receipt's bytes: a linked file, or the page as HTML |
 | `src/api.ts` | The Connect API in JSON, with the token |
 | `src/connection.ts`, `src/pending.ts` | What's kept in `chrome.storage` |

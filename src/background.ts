@@ -81,6 +81,62 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
+// ——— The badge: how many receipts the tab's page has ———
+
+/** What a tab's page said it has (watch.ts), and what the panel found once it looked further (panel.ts). */
+interface Counted {
+  url: string;
+  found: number;
+  more: boolean;
+  panel?: number;
+}
+
+const counts = new Map<number, Counted>();
+
+function showBadge(tabId: number) {
+  const counted = counts.get(tabId);
+  const found = counted ? Math.max(counted.found, counted.panel ?? 0) : 0;
+  const text = found > 99 ? "99+" : found > 0 ? String(found) : counted?.more ? "•" : "";
+
+  void chrome.action.setBadgeText({ tabId, text }).catch(() => undefined);
+}
+
+void chrome.action.setBadgeBackgroundColor({ color: "#4a47f5" });
+void chrome.action.setBadgeTextColor?.({ color: "#ffffff" });
+
+interface CountMessage {
+  type: "spendyard.count" | "spendyard.panel-count";
+  url: string;
+  found: number;
+  more?: boolean;
+  tabId?: number;
+}
+
+chrome.runtime.onMessage.addListener((message: CountMessage, sender) => {
+  if (message?.type === "spendyard.count" && sender.tab?.id !== undefined) {
+    const tabId = sender.tab.id;
+    const before = counts.get(tabId);
+
+    // Another page: what the panel found was for the last one.
+    const panel = before?.url === message.url ? before.panel : undefined;
+
+    counts.set(tabId, { url: message.url, found: message.found, more: Boolean(message.more), panel });
+    showBadge(tabId);
+  }
+
+  if (message?.type === "spendyard.panel-count" && message.tabId !== undefined && sender.id === chrome.runtime.id && !sender.tab) {
+    const before = counts.get(message.tabId);
+    const sameUrl = before?.url === message.url;
+
+    counts.set(message.tabId, { url: message.url, found: sameUrl ? before.found : 0, more: sameUrl ? before.more : false, panel: message.found });
+    showBadge(message.tabId);
+  }
+
+  return false;
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => counts.delete(tabId));
+
 interface Handed extends Connection {
   type: string;
 }

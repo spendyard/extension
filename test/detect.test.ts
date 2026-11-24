@@ -232,3 +232,34 @@ it("with no rule, reads the page's call to its own billing API's list, and no ot
 
   expect(read).toEqual([{ url: "https://svc.eu01.boards.example/api/v1/organizations/1/invoices", vendor: "Boards" }]);
 });
+
+// ——— The badge: what watch.ts counts as a page loads ———
+
+/** The page loaded with watch.ts in it, and what it said to the background once it settled. */
+async function counted(name: string, url: string): Promise<unknown[]> {
+  const built = await Bun.build({ entrypoints: [`${import.meta.dir}/../src/watch.ts`], target: "browser" });
+  const window = new Window({ url });
+  const said: unknown[] = [];
+
+  Object.assign(window, { chrome: { runtime: { sendMessage: async (m: unknown) => void said.push(m) } } });
+  window.document.write(readFileSync(`${import.meta.dir}/pages/${name}`, "utf8"));
+  window.eval(await built.outputs[0]!.text());
+
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await window.happyDOM.close();
+
+  return said;
+}
+
+it("counts a billing page's likely receipts for the badge: its PDFs and the invoice pages its rows link to", async () => {
+  expect(await counted("billing.html", "https://acme.example/billing")).toEqual([
+    // invoice-2026-11.pdf and the row linking to its invoice's page; terms.pdf is listed in the panel, not counted.
+    { type: "spendyard.count", url: "https://acme.example/billing", found: 2, more: false },
+  ]);
+});
+
+it("doesn't scan a page that doesn't look like billing, and says so with nothing", async () => {
+  expect(await counted("shop.html", "https://acme.example/new-arrivals")).toEqual([
+    { type: "spendyard.count", url: "https://acme.example/new-arrivals", found: 0, more: false },
+  ]);
+});

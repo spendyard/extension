@@ -120,12 +120,19 @@ export function dateValue(date: string | null): Date | null {
   return null;
 }
 
+/** Likely a receipt: what the badge and the panel's count count; the panel lists the less likely ones too. */
+export const likelyFrom = 5;
+
+export function likely(found: Found): boolean {
+  return found.score >= likelyFrom;
+}
+
 /** How far back the panel ticks: a first send from a long history is the last year, not everything since 2020. */
 export const tickedMonths = 12;
 
 /** The panel's bar for ticking a receipt: likely (detect.ts's score 5 or more), and dated in the last year or not dated. */
 export function ticksByDefault(found: Found, now = new Date()): boolean {
-  if (found.score < 5) {
+  if (!likely(found)) {
     return false;
   }
 
