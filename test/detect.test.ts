@@ -395,3 +395,35 @@ it("remembers what was uploaded, for each Spendyard and organisation, and knows 
   expect(receiptKeyOf("https://acme.example/files/invoice.pdf")).toBe("https://acme.example/files/invoice.pdf");
   expect(receiptKeyOf("blob:https://acme.example/1b2c")).toBeNull();
 });
+
+// ——— A paid Stripe invoice's receipt ———
+
+it("asks Stripe for a paid invoice's receipt, by its account and token, and keeps the invoice when there's none", async () => {
+  const { receiptLookupOf, stripeReceiptOf } = await import("../src/stripe-receipts");
+
+  const invoice = "https://pay.stripe.com/invoice/acct_1Abc/live_YWNjdF8xQWJj/pdf?s=ap";
+
+  expect(receiptLookupOf(invoice)).toBe("https://invoicedata.stripe.com/invoice_receipt_file_url/acct_1Abc/live_YWNjdF8xQWJj?s=ap");
+  expect(receiptLookupOf("https://acme.example/files/invoice.pdf")).toBeNull();
+  expect(receiptLookupOf("https://pay.stripe.com/receipts/invoices/CAc/pdf")).toBeNull();
+
+  const realFetch = globalThis.fetch;
+  const answer = (status: number, body: object) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+  try {
+    globalThis.fetch = (async () => answer(200, { file_url: "https://dashboard.stripe.com/receipts/invoices/CAcX/pdf" })) as unknown as typeof fetch;
+    expect(await stripeReceiptOf(invoice)).toBe("https://dashboard.stripe.com/receipts/invoices/CAcX/pdf");
+
+    // Not paid yet: Stripe has no receipt for it.
+    globalThis.fetch = (async () => answer(404, { error: "not found" })) as unknown as typeof fetch;
+    expect(await stripeReceiptOf(invoice)).toBeNull();
+
+    // Anything but Stripe's own file is no receipt of Stripe's.
+    globalThis.fetch = (async () => answer(200, { file_url: "https://elsewhere.example/x.pdf" })) as unknown as typeof fetch;
+    expect(await stripeReceiptOf(invoice)).toBeNull();
+
+    expect(await stripeReceiptOf("https://acme.example/files/invoice.pdf")).toBeNull();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

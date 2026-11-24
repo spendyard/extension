@@ -3,6 +3,7 @@
 // the page itself as one HTML file (detect.ts's snapshot).
 
 import { looksLikeId, type Found } from "./found";
+import { stripeReceiptOf } from "./stripe-receipts";
 
 /** As the server takes them (documents/intake.ts). */
 const largest = 25 * 1024 * 1024;
@@ -121,14 +122,19 @@ function looksLikeSignIn(response: Response): boolean {
 }
 
 async function fetchFile(found: Found): Promise<Got> {
-  const response = await fetch(found.url, { credentials: "include" });
+  // A paid Stripe invoice is sent as its receipt, which says it was paid; one not paid yet as itself.
+  const receipt = await stripeReceiptOf(found.url);
+  const url = receipt ?? found.url;
+
+  // Stripe's receipt needs no sign-in, and is sent none.
+  const response = await fetch(url, { credentials: receipt ? "omit" : "include" });
 
   if (!response.ok) {
-    throw new Error(`${new URL(found.url).hostname} answered ${response.status}`);
+    throw new Error(`${new URL(url).hostname} answered ${response.status}`);
   }
 
   if (looksLikeSignIn(response)) {
-    throw new Error(`${new URL(found.url).hostname} asked to sign in instead`);
+    throw new Error(`${new URL(url).hostname} asked to sign in instead`);
   }
 
   const bytes = new Uint8Array(await response.arrayBuffer());
@@ -147,7 +153,7 @@ async function fetchFile(found: Found): Promise<Got> {
   const given = dispositionName(response.headers.get("content-disposition"));
   const title = contentType === "text/html" ? titleIn(bytes) : null;
 
-  return { name: nameFor(given, found, contentType, title), contentType, bytes };
+  return { name: nameFor(given, { ...found, url }, contentType, title), contentType, bytes };
 }
 
 async function snapshotPage(tabId: number, found: Found): Promise<Got> {

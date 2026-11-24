@@ -19,6 +19,11 @@ looking at, and downloads the ones you pick or uploads them to Spendyard.
   "already had it" too, and shown as *Already in Spendyard · Open*, unticked;
   a Stripe invoice is known again under its next address. A receipt that
   reached Spendyard another way isn't known.
+- **Stripe's receipts**: a paid Stripe invoice is downloaded and uploaded
+  as its receipt (`src/stripe-receipts.ts`), which says it was paid, when and
+  with which card; the invoice's own PDF only says what was due. Stripe's
+  invoice page asks `invoicedata.stripe.com` for it, and so does the
+  extension; an invoice not paid yet has none, and goes as itself.
 - **Load more**: a list that shows a few at a time has its Load more (Show
   more, Vis flere…) pressed by the panel, as you would, until it reaches back
   past 12 months, ten presses at most; **Load more** in the list goes further.
@@ -131,6 +136,7 @@ bun test        # detection on the pages in test/pages
 | `src/panel.ts` | The side panel |
 | `src/sites.ts` | The rules for particular billing pages |
 | `src/follow.ts` | Opening an invoice's own page for its PDF |
+| `src/stripe-receipts.ts` | A paid Stripe invoice's receipt, in its place |
 | `src/stripe.ts` | Stripe's invoices in a billing API's answer |
 | `src/general.ts` | What the scan does on a site with no rule |
 | `src/watch.ts` | From each page's start: the badge's count, and its calls to a billing API |

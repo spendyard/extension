@@ -9,6 +9,7 @@
 // When neither works, the panel shows the file in its folder to drop on it.
 
 import { isPdfBytes, type Got } from "./fetch";
+import { stripeReceiptOf } from "./stripe-receipts";
 
 /** A PDF downloaded by hand, as the panel offers it. */
 export interface Downloaded {
@@ -102,13 +103,17 @@ export async function bytesOf(downloaded: Downloaded, tabId: number | null): Pro
       return asPdf(await fromPage(tabId, url), name);
     }
 
-    const response = await fetch(url, { credentials: "include" });
+    // A paid Stripe invoice goes as its receipt, which says it was paid.
+    const receipt = await stripeReceiptOf(url);
+    const response = await fetch(receipt ?? url, { credentials: receipt ? "omit" : "include" });
 
     if (!response.ok) {
       throw new Error(`answered ${response.status}`);
     }
 
-    return asPdf(new Uint8Array(await response.arrayBuffer()), name);
+    const receiptName = receipt ? response.headers.get("content-disposition")?.match(/filename="?([^";]+)"?/i)?.[1] : null;
+
+    return asPdf(new Uint8Array(await response.arrayBuffer()), receiptName ?? name);
   } catch (e) {
     if (e instanceof Error && e.message.startsWith("Not a PDF")) {
       throw e;
