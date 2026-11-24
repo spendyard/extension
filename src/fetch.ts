@@ -13,6 +13,11 @@ export interface Got {
   bytes: Uint8Array<ArrayBuffer>;
 }
 
+/** Whether the first bytes say it's a PDF (%PDF), whatever it was called. */
+export function isPdfBytes(bytes: Uint8Array): boolean {
+  return sniff(bytes) === "application/pdf";
+}
+
 /** What the first bytes say a file is, whatever the server called it. */
 function sniff(bytes: Uint8Array): string | null {
   const starts = (...signature: number[]) => signature.every((b, i) => bytes[i] === b);

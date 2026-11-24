@@ -120,6 +120,41 @@ export function dateValue(date: string | null): Date | null {
   return null;
 }
 
+/**
+ * Which receipt it is, whichever way it was found: Stripe's PDF by its address without its query (the same invoice
+ * comes with another ?s= from a page and from its billing API, as Vercel's do), anything else by its id.
+ */
+export function receiptKey(found: Found): string {
+  try {
+    const url = new URL(found.url);
+
+    if (url.hostname === "pay.stripe.com") {
+      return `${url.origin}${url.pathname}`;
+    }
+  } catch {
+    // Not an address: its id.
+  }
+
+  return found.id;
+}
+
+/** Each receipt once, the first of it kept: found on the page, from its invoice pages and from its billing API. */
+export function once(found: Found[]): Found[] {
+  const seen = new Set<string>();
+
+  return found.filter((f) => {
+    const key = receiptKey(f);
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+
+    return true;
+  });
+}
+
 /** Likely a receipt: what the badge and the panel's count count; the panel lists the less likely ones too. */
 export const likelyFrom = 5;
 

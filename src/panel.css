@@ -296,6 +296,20 @@ body {
   gap: 2px;
 }
 
+.buttons {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+#downloads {
+  margin: 12px 0 4px;
+}
+
+#downloads h2 {
+  margin-bottom: 6px;
+}
+
 .status.saved {
   color: var(--good);
 }

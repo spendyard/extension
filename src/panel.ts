@@ -7,9 +7,10 @@
 import { disconnect, sendDocument, signedOut, whoAmI } from "./api";
 import { connection, connectUrl, forget, isConnectionChange, servers, type Connection } from "./connection";
 import { get, type Got } from "./fetch";
+import { bytesOf, pdfDownload, type Downloaded } from "./downloads";
 import { follow, mostFollowed } from "./follow";
 import { stripeInvoices } from "./stripe";
-import { likely, ticksByDefault, type Found, type Scan } from "./found";
+import { likely, once, receiptKey, ticksByDefault, type Found, type Scan } from "./found";
 import { isPendingChange, take } from "./pending";
 
 type Status =
@@ -40,6 +41,8 @@ const state = {
   view: "summary" as "summary" | "list",
   /** Connecting, asked for, or by Upload while not connected. */
   connecting: false,
+  /** PDFs downloaded by hand while the panel is open, the newest first (downloads.ts). */
+  downloaded: [] as Downloaded[],
 };
 
 /** Each invoice page opened, by its URL: its PDF, or null when it had none. Kept while the panel is open. */
@@ -75,6 +78,8 @@ const ui = {
   tickNone: element<HTMLButtonElement>("tick-none"),
   actions: element<HTMLElement>("actions"),
   download: element<HTMLButtonElement>("download"),
+  downloads: element<HTMLElement>("downloads"),
+  downloadedList: element<HTMLUListElement>("downloaded"),
   sent: element<HTMLUListElement>("sent"),
   where: element<HTMLElement>("where"),
   list: element<HTMLUListElement>("list"),
@@ -174,6 +179,75 @@ function foundItem(found: Found): HTMLLIElement {
   return item;
 }
 
+/** The status id of a PDF downloaded by hand. */
+const downloadKey = (d: Downloaded) => `download:${d.downloadId}`;
+
+/** A PDF downloaded by hand: Upload (or Connect to upload), and when it can't be got again, its folder to drop it from. */
+function downloadedItem(downloaded: Downloaded): HTMLLIElement {
+  const item = make("li", "item no-box");
+  const label = make("div", "label");
+  const status = state.status.get(downloadKey(downloaded));
+
+  label.append(make("span", "kind", "PDF"), downloaded.name);
+  item.append(label, make("div", "context", downloaded.from ? `Downloaded from ${downloaded.from}` : "Downloaded"));
+
+  const buttons = make("div", "buttons");
+  const busy = status?.state === "sending" || status?.state === "sent";
+
+  if (!busy) {
+    const upload = make("button", "small primary", state.connection ? "Upload" : "Connect to upload");
+
+    upload.addEventListener("click", () => void uploadDownloaded(downloaded));
+    buttons.append(upload);
+  }
+
+  if (status?.state === "failed") {
+    const show = make("button", "small", "Show in folder");
+
+    show.addEventListener("click", () => chrome.downloads.show(downloaded.downloadId));
+    buttons.append(show);
+  }
+
+  if (buttons.childElementCount > 0) {
+    item.append(buttons);
+  }
+
+  const line = statusLine(status);
+
+  if (line) {
+    item.append(line);
+  }
+
+  return item;
+}
+
+/** Uploads a PDF downloaded by hand, got again from where it came from; connecting first when not connected. */
+async function uploadDownloaded(downloaded: Downloaded) {
+  if (!state.connection) {
+    state.connecting = true;
+    render();
+
+    return;
+  }
+
+  await sendOne(downloadKey(downloaded), () => bytesOf(downloaded, state.tabId));
+}
+
+/** A download finished: offered when it's a PDF the person downloaded, not one of the panel's own. */
+async function downloadFinished(delta: chrome.downloads.DownloadDelta) {
+  if (delta.state?.current !== "complete") {
+    return;
+  }
+
+  const [item] = await chrome.downloads.search({ id: delta.id });
+  const downloaded = item ? pdfDownload(item, chrome.runtime.id) : null;
+
+  if (downloaded && !state.downloaded.some((d) => d.downloadId === downloaded.downloadId)) {
+    state.downloaded.unshift(downloaded);
+    render();
+  }
+}
+
 function extraItem(extra: Extra): HTMLLIElement {
   const item = make("li", "item no-box");
   const label = make("div", "label");
@@ -190,9 +264,15 @@ function extraItem(extra: Extra): HTMLLIElement {
   return item;
 }
 
-/** Ticked, and not on its way already. */
+/** Ticked in the list, and not on its way already. */
 function waiting(busy: Status["state"][]): string[] {
+  const listed = new Set((state.scan?.found ?? []).map((f) => f.id));
+
   return [...state.ticked].filter((id) => {
+    if (!listed.has(id)) {
+      return false;
+    }
+
     const status = state.status.get(id)?.state;
 
     return !status || !busy.includes(status);
@@ -251,6 +331,9 @@ function render() {
 
   ui.sent.replaceChildren(...state.extras.map(extraItem));
 
+  ui.downloads.hidden = state.downloaded.length === 0;
+  ui.downloadedList.replaceChildren(...state.downloaded.map(downloadedItem));
+
   const found = state.scan?.found ?? [];
   const looking = !state.scan || state.following > 0;
   const where = state.scan ? new URL(state.scan.url).host : "";
@@ -268,7 +351,7 @@ function render() {
   ui.count.textContent = String(receipts);
   ui.countLabel.textContent = `${receipts === 1 ? "receipt" : "receipts"} found on this page`;
   ui.countTicked.textContent = [
-    `${state.ticked.size} ticked, from the last 12 months`,
+    `${found.filter((f) => state.ticked.has(f.id)).length} ticked, from the last 12 months`,
     others > 0 ? `and ${plural(others, "other PDF", "other PDFs")}` : "",
   ]
     .filter(Boolean)
@@ -377,12 +460,11 @@ async function scanOnce() {
 
 /** The scan with the PDFs already taken from its invoice pages and billing APIs. */
 function withFollowed(scanned: Scan): Scan {
-  const have = new Set(scanned.found.map((f) => f.id));
-  const fromPages = scanned.follow.map((page) => followed.get(page.url));
+  const fromPages = scanned.follow.map((page) => followed.get(page.url)).filter((f): f is Found => Boolean(f));
   const fromApis = scanned.read.flatMap((api) => read.get(api.url) ?? []);
-  const taken = [...fromPages, ...fromApis].filter((f): f is Found => Boolean(f) && !have.has(f!.id));
 
-  return { ...scanned, found: [...scanned.found, ...taken] };
+  // The same invoice from its page and from the billing API (Vercel's list is both): once.
+  return { ...scanned, found: once([...scanned.found, ...fromPages, ...fromApis]) };
 }
 
 /**
@@ -435,7 +517,10 @@ async function readAll(tabId: number, scanned: Scan) {
       const own = state.scan.found.filter((f) => !fromElsewhere.has(f.id));
 
       state.scan = withFollowed({ ...state.scan, found: own });
-      invoices.filter((f) => ticksByDefault(f)).forEach((f) => state.ticked.add(f.id));
+      // Only those listed: one the page or an invoice page had already found is ticked as that.
+      const listed = new Set(state.scan.found.map((f) => f.id));
+
+      invoices.filter((f) => listed.has(f.id) && ticksByDefault(f)).forEach((f) => state.ticked.add(f.id));
     }
 
     render();
@@ -464,7 +549,7 @@ async function followAll(scanned: Scan) {
     state.following -= 1;
 
     // Still the page it was found on: listed in the list's own order, whichever page answered first, and ticked.
-    if (pdf && state.scan?.url === scanned.url && !state.scan.found.some((f) => f.id === pdf.id)) {
+    if (pdf && state.scan?.url === scanned.url && !state.scan.found.some((f) => receiptKey(f) === receiptKey(pdf))) {
       const fromElsewhere = new Set([...followed.values(), ...[...read.values()].flat()].map((f) => f?.id));
       const own = state.scan.found.filter((f) => !fromElsewhere.has(f.id));
 
@@ -741,6 +826,9 @@ function setUp() {
   ui.sendPage.addEventListener("click", () => void sendWholePage());
 
   chrome.tabs.onActivated.addListener(() => void scan());
+
+  // A PDF downloaded by hand while the panel is open: a Download button the scan couldn't see behind.
+  chrome.downloads.onChanged.addListener((delta) => void downloadFinished(delta));
 
   // The page changed under the panel: a billing list drawn after the page loaded (Vercel's, Miro's), or another
   // page of an app that never reloads. Its count (watch.ts) says so, as it does to the badge: look again.

@@ -263,3 +263,30 @@ it("doesn't scan a page that doesn't look like billing, and says so with nothing
     { type: "spendyard.count", url: "https://acme.example/new-arrivals", found: 0, more: false },
   ]);
 });
+
+// ——— Each receipt once, and PDFs downloaded by hand ———
+
+it("counts one Stripe invoice once, however it was found and whatever its query", async () => {
+  const { once } = await import("../src/found");
+
+  const pdf = (id: string, url: string, label: string): Found => ({ id, kind: "file", url, label, context: "", amount: null, date: null, score: 8 });
+  const fromPage = pdf("a", "https://pay.stripe.com/invoice/acct_1/test_A/pdf?s=ap", "From its invoice's page");
+  const fromApi = pdf("b", "https://pay.stripe.com/invoice/acct_1/test_A/pdf?s=em", "From the billing API");
+  const another = pdf("c", "https://pay.stripe.com/invoice/acct_1/test_B/pdf?s=ap", "Another");
+  const elsewhere = pdf("d", "https://acme.example/files/invoice.pdf?v=1", "Not Stripe's");
+  const elsewhereAgain = pdf("e", "https://acme.example/files/invoice.pdf?v=2", "Not Stripe's, another query");
+
+  expect(once([fromPage, fromApi, another, elsewhere, elsewhereAgain]).map((f) => f.id)).toEqual(["a", "c", "d", "e"]);
+});
+
+it("offers a PDF downloaded by hand, not one of its own, and says where it came from", async () => {
+  const { pdfDownload } = await import("../src/downloads");
+
+  const item = (o: Partial<chrome.downloads.DownloadItem>) => ({ id: 7, state: "complete", filename: "/Users/me/Downloads/Invoice-1234.pdf", mime: "application/pdf", url: "https://pay.stripe.com/invoice/a/pdf", finalUrl: "https://files.stripe.com/x", referrer: "https://miro.com/app/settings/billing", ...o }) as chrome.downloads.DownloadItem;
+
+  expect(pdfDownload(item({}), "own")).toEqual({ downloadId: 7, url: "https://files.stripe.com/x", name: "Invoice-1234.pdf", from: "miro.com" });
+  expect(pdfDownload(item({ url: "blob:https://miro.com/1b2c", finalUrl: "blob:https://miro.com/1b2c", referrer: "" }), "own")?.from).toBe("miro.com");
+  expect(pdfDownload(item({ byExtensionId: "own" }), "own")).toBeNull();
+  expect(pdfDownload(item({ state: "in_progress" }), "own")).toBeNull();
+  expect(pdfDownload(item({ filename: "/Users/me/Downloads/photo.png", mime: "image/png" }), "own")).toBeNull();
+});

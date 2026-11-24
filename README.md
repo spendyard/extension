@@ -18,6 +18,11 @@ looking at, and downloads the ones you pick or uploads them to Spendyard.
   upload would name them; it needs no connection. **Upload** sends them to
   Spendyard, and asks to connect first when it isn't. **Send the whole page**
   sends the page itself, by hand.
+- **Downloaded by hand**: a PDF you download while the panel is open (a
+  billing page's Download button that the scan can't see behind) is offered
+  under *Downloaded just now*, to upload. It's got again from where it came
+  from, or from the page that made it; when neither works, *Show in folder*
+  finds it to drop on the panel.
 - **Right-click** a link, an image or the page: *Send to Spendyard*.
 - **Drop files** on the panel, or choose them.
 

@@ -7,7 +7,7 @@
 // name, the words, amounts and dates around it. Nothing here is certain, so
 // the panel shows everything above a low bar and ticks the likely ones.
 
-import { looksLikeId, type Found, type Scan, type ToFollow, type ToRead } from "./found";
+import { looksLikeId, receiptKey, type Found, type Scan, type ToFollow, type ToRead } from "./found";
 import { anyPdf, billingApi, invoicePage, siteOf, stripeInvoicePage, vendorOf } from "./general";
 import { matches, ruleFor, type SiteRule } from "./sites";
 
@@ -392,11 +392,13 @@ export function scan(): Scan {
   const found = new Map<string, Found>();
   const rule = ruleFor(new URL(location.href));
 
+  // One receipt once, by its key: the likeliest of it kept.
   const keep = (item: Found) => {
-    const before = found.get(item.id);
+    const key = receiptKey(item);
+    const before = found.get(key);
 
     if (!before || before.score < item.score) {
-      found.set(item.id, item);
+      found.set(key, item);
     }
   };
 
